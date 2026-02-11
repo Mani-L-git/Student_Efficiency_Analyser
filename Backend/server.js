@@ -1,62 +1,74 @@
 const express = require("express");
-const mysql = require("mysql2");
 const cors = require("cors");
-const bodyParser = require("body-parser");
+const jwt = require("jsonwebtoken");
+const mysql = require("mysql2");
 
 const app = express();
 
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
+const SECRET_KEY = "manikandan_secret_key";
+
+// ✅ MySQL Connection
 const db = mysql.createConnection({
   host: "localhost",
   user: "root",
   password: "2005",
-  database: "students"
+  database: "slea",
 });
 
 db.connect((err) => {
-  if (err) {
-    console.log("Database connection failed:", err);
+  if (err) {  
+    console.log("❌ Database connection failed");
   } else {
-    console.log("Connected to MySQL");
+    console.log("✅ Connected to MySQL");
   }
 });
 
-// Insert mark
-app.post("/add-mark", (req, res) => {
-  const { mark } = req.body;
+// ✅ LOGIN API
+app.post("/login", (req, res) => {
+  const { email, password } = req.body;
 
-  const sql = "INSERT INTO marks (mark) VALUES (?)";
-  db.query(sql, [mark], (err, result) => {
-    if (err) {
-      console.log(err);
-      res.status(500).send("Error inserting data");
-    } else {
-      res.send("Mark added successfully");
-    }
-  });
-});
+  console.log("Login attempt:", email, password);
 
-// Get all marks
-app.get("/marks", (req, res) => {
-  db.query("SELECT * FROM marks", (err, result) => {
-    if (err) {
-      res.status(500).send("Error fetching data");
-    } else {
-      res.json(result);
+  db.query(
+    "SELECT * FROM users WHERE email = ?",
+    [email],
+    (err, result) => {
+      if (err) {
+        console.log(err);
+        return res.status(500).json({ message: "Server error" });
+      }
+
+      if (result.length === 0) {
+        return res.status(400).json({ message: "User not found" });
+      }
+
+      const user = result[0];
+
+      if (user.password !== password) {
+        return res.status(400).json({ message: "Wrong password" });
+      }
+
+      const token = jwt.sign(
+        { id: user.id, role: user.role },
+        SECRET_KEY,
+        { expiresIn: "1h" }
+      );
+
+      res.json({
+        message: "Login successful",
+        token,
+        role: user.role,
+      });
     }
-  });
+  );
 });
 
 app.listen(5000, () => {
-  console.log("Server running on port 5000");
+  console.log("🚀 Server running on port 5000");
 });
-
-
-
-
-
 
 
 
