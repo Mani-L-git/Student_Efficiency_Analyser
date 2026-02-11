@@ -1,3 +1,33 @@
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import Login from "./pages/Login";
+import AdminDashboard from "./pages/AdminDashboard";
+import StudentDashboard from "./pages/StudentDashboard";
+import SuperAdminDashboard from "./pages/SuperAdminDashboard";
+
+function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/student" element={<StudentDashboard />} />
+        <Route path="/superadmin" element={<SuperAdminDashboard />} />
+      </Routes>
+    </Router>
+  );
+}
+
+export default App;
+
+
+
+
+
+
+
+
+
+/*
 import { useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
@@ -33,3 +63,4 @@ function App() {
 }
 
 export default App
+*/
