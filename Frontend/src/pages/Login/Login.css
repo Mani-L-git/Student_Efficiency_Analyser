@@ -1,3 +1,71 @@
+/* ===== Full Screen Login Layout ===== */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Poppins", sans-serif;
+}
+
+body {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Full screen container */
 .login {
-    background-color: mediumorchid;
+  width: 100vw;
+  height: 100vh;
+  background: linear-gradient(135deg, #4e54c8, #8f94fb);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  color: white;
+}
+
+.login h1 {
+  font-size: 32px;
+  margin-bottom: 20px;
+  font-weight: 700;
+}
+
+/* Inputs */
+.login input {
+  width: 100%;
+  max-width: 350px;
+  padding: 12px 15px;
+  margin: 12px 0;
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
+  outline: none;
+  transition: 0.3s;
+}
+
+.login input:focus {
+  background: #ffffffcc;
+}
+
+/* Login Button */
+.login button {
+  width: 100%;
+  max-width: 350px;
+  padding: 12px;
+  margin-top: 15px;
+  background: #fff;
+  color: #4e54c8;
+  font-size: 18px;
+  font-weight: bold;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: 0.3s ease-in-out;
+}
+
+.login button:hover {
+  background: #ddd;
+  transform: scale(1.03);
 }

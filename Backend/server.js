@@ -19,25 +19,26 @@ const SECRET_KEY = process.env.JWT_SECRET || "manikandan_secret_key";
 function verifyToken(req, res, next) {
   const authHeader = req.headers["authorization"];
 
-  if (!authHeader)
-    return res.status(403).json({ message: "No token provided" });
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(403).json({ message: "Token missing or malformed" });
+  }
 
   const token = authHeader.split(" ")[1];
 
-  jwt.verify(token, SECRET_KEY, (err, decoded) => {
-    if (err)
-      return res.status(401).json({ message: "Invalid token" });
-
+  try {
+    const decoded = jwt.verify(token, SECRET_KEY);
     req.user = decoded;
     next();
-  });
+  } catch (err) {
+    return res.status(401).json({ message: "Invalid or expired token" });
+  }
 }
 
 /* ==========================
-   ADMIN ONLY MIDDLEWARE
+   ADMIN + SUPERADMIN ACCESS
 ========================== */
 function verifyAdmin(req, res, next) {
-  if (req.user.role !== "admin") {
+  if (!req.user || (req.user.role !== "admin" && req.user.role !== "superadmin")) {
     return res.status(403).json({ message: "Admin access required" });
   }
   next();
@@ -55,15 +56,23 @@ app.post("/login", async (req, res) => {
       [email]
     );
 
-    if (rows.length === 0)
+    if (rows.length === 0) {
       return res.status(400).json({ message: "User not found" });
+    }
 
     const user = rows[0];
 
-if (user.password !== password) {
+    if (password !== user.password) {
   return res.status(400).json({ message: "Wrong password" });
 }
 
+
+    // ✅ Proper password check
+    // const isMatch = compare(password, user.password);
+
+    // if (!isMatch) {
+    //   return res.status(400).json({ message: "Wrong password" });
+    // }
 
     const token = jwt.sign(
       { id: user.id, role: user.role },
@@ -76,8 +85,10 @@ if (user.password !== password) {
       role: user.role,
       id: user.id,
     });
+
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Login Error:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -85,19 +96,35 @@ if (user.password !== password) {
    ADD STUDENT (ADMIN ONLY)
 ========================== */
 app.post("/add-student", verifyToken, verifyAdmin, async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, rollno, email, password } = req.body;
+
+  if (!name || !rollno || !email || !password) {
+    return res.status(400).json({ message: "All fields required" });
+  }
 
   try {
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Check duplicate email
+    const [existing] = await pool.query(
+      "SELECT id FROM users WHERE email = ?",
+      [email]
+    );
+
+    if (existing.length > 0) {
+      return res.status(400).json({ message: "Email already exists" });
+    }
+
+    
 
     await pool.query(
-      "INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)",
-      [name, email, hashedPassword, "student"]
+      "INSERT INTO users (name, rollno, email, password, role) VALUES (?, ?, ?, ?, ?)",
+      [name, rollno, email, password, "student"]
     );
 
     res.json({ message: "Student added successfully" });
+
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Add Student Error:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -107,11 +134,14 @@ app.post("/add-student", verifyToken, verifyAdmin, async (req, res) => {
 app.get("/students", verifyToken, verifyAdmin, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      "SELECT id, name, email FROM users WHERE role = 'student'"
+      "SELECT id, name, rollno, email FROM users WHERE role = 'student'"
     );
+
     res.json(rows);
+
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Fetch Students Error:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -123,7 +153,8 @@ app.get("/subjects", async (req, res) => {
     const [rows] = await pool.query("SELECT * FROM subjects");
     res.json(rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Fetch Subjects Error:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -131,10 +162,13 @@ app.get("/subjects", async (req, res) => {
    ADD MARKS (ADMIN ONLY)
 ========================== */
 app.post("/add-marks", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const { student_id, subject_id, grade, sgpa, semester, department } =
-      req.body;
+  const { student_id, subject_id, grade, sgpa, semester, department } = req.body;
 
+  if (!student_id || !subject_id || !grade || !sgpa || !semester || !department) {
+    return res.status(400).json({ message: "All fields required" });
+  }
+
+  try {
     await pool.query(
       `INSERT INTO marks 
        (student_id, subject_id, grade, sgpa, semester, department)
@@ -143,111 +177,60 @@ app.post("/add-marks", verifyToken, verifyAdmin, async (req, res) => {
     );
 
     res.json({ message: "Marks added successfully" });
+
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Add Marks Error:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
-/* ==========================
-   UPDATE MARKS (ADMIN ONLY)
-========================== */
-app.put("/update-marks/:id", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const { grade, sgpa, semester, department } = req.body;
 
+/* ==========================
+   ADD SUBJECT (ADMIN ONLY)
+========================== */
+app.post("/add-subject", verifyToken, verifyAdmin, async (req, res) => {
+  const { subject_name } = req.body;
+
+  if (!subject_name) {
+    return res.status(400).json({ message: "Subject name required" });
+  }
+
+  try {
     await pool.query(
-      `UPDATE marks 
-       SET grade=?, sgpa=?, semester=?, department=? 
-       WHERE id=?`,
-      [grade, sgpa, semester, department, req.params.id]
+      "INSERT INTO subjects (subject_name) VALUES (?)",
+      [subject_name]
     );
 
-    res.json({ message: "Marks updated successfully" });
+    res.json({ message: "Subject added successfully" });
+
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Add Subject Error:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
 /* ==========================
-   DELETE MARKS (ADMIN ONLY)
+   GET SINGLE STUDENT (STUDENT)
 ========================== */
-app.delete("/delete-marks/:id", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    await pool.query("DELETE FROM marks WHERE id=?", [req.params.id]);
-    res.json({ message: "Marks deleted successfully" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/* ==========================
-   GET ALL MARKS (ADMIN ONLY)
-========================== */
-app.get("/all-marks", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const [rows] = await pool.query(`
-      SELECT 
-        marks.*, 
-        users.name AS student_name,
-        subjects.subject_name
-      FROM marks
-      JOIN users ON marks.student_id = users.id
-      JOIN subjects ON marks.subject_id = subjects.id
-    `);
-
-    res.json(rows);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/* ==========================
-   GET STUDENT MARKS (PROTECTED)
-========================== */
-app.get("/student-marks/:id", verifyToken, async (req, res) => {
+app.get("/student/:id", verifyToken, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT 
-          subjects.subject_name,
-          marks.grade,
-          marks.sgpa,
-          marks.semester,
-          marks.department
-       FROM marks
-       INNER JOIN subjects 
-       ON marks.subject_id = subjects.id
-       WHERE marks.student_id = ?`,
+      "SELECT id, name, rollno, email FROM users WHERE id = ? AND role = 'student'",
       [req.params.id]
     );
 
-    res.json(rows);
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+
+    res.json(rows[0]);
+
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Fetch Student Error:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
-/* ==========================
-   GET STUDENT ATTENDANCE (PROTECTED)
-========================== */
-app.get("/student-attendance/:id", verifyToken, async (req, res) => {
-  try {
-    const [rows] = await pool.query(
-      `SELECT 
-          subjects.subject_name,
-          attendance.attendance_percentage,
-          attendance.semester
-       FROM attendance
-       INNER JOIN subjects
-       ON attendance.subject_id = subjects.id
-       WHERE attendance.student_id = ?`,
-      [req.params.id]
-    );
-
-    res.json(rows);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
 
 /* ==========================
    START SERVER

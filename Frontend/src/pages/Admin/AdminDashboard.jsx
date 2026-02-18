@@ -1,14 +1,25 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import "./Admin.css";
 
 function AdminDashboard() {
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
 
-  // ================= STATES =================
+  const [collapsed, setCollapsed] = useState(false);
+
   const [students, setStudents] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [marks, setMarks] = useState([]);
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [loading, setLoading] = useState(true);
+
+  const [newSubject, setNewSubject] = useState("");
+
+  const [newStudentName, setNewStudentName] = useState("");
+  const [newStudentEmail, setNewStudentEmail] = useState("");
+  const [newStudentRollno, setNewStudentRollno] = useState("");
+  const [newStudentPassword, setNewStudentPassword] = useState("");
 
   const [selectedStudent, setSelectedStudent] = useState("");
   const [selectedSubject, setSelectedSubject] = useState("");
@@ -17,24 +28,20 @@ function AdminDashboard() {
   const [semester, setSemester] = useState("");
   const [department, setDepartment] = useState("");
 
-  const [editingId, setEditingId] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  // ================= LOAD DATA =================
   useEffect(() => {
     if (!token) {
       navigate("/");
       return;
     }
-
-    loadData();
+    fetchAll();
   }, []);
 
-  const loadData = async () => {
+  const fetchAll = async () => {
     try {
+      setLoading(true);
       await Promise.all([fetchStudents(), fetchSubjects(), fetchMarks()]);
-    } catch (error) {
-      console.log("Loading error:", error);
+    } catch (err) {
+      console.error("Error loading admin data:", err);
     } finally {
       setLoading(false);
     }
@@ -46,10 +53,9 @@ function AdminDashboard() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
-      setStudents(Array.isArray(data) ? data : data.data || []);
+      setStudents(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.log("Students fetch error:", err);
-      setStudents([]);
+      console.error("Error fetching students:", err);
     }
   };
 
@@ -57,55 +63,92 @@ function AdminDashboard() {
     try {
       const res = await fetch("http://localhost:5000/subjects");
       const data = await res.json();
-      setSubjects(Array.isArray(data) ? data : data.data || []);
+      setSubjects(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.log("Subjects fetch error:", err);
-      setSubjects([]);
+      console.error("Error fetching subjects:", err);
     }
   };
 
   const fetchMarks = async () => {
     try {
-      const res = await fetch("http://localhost:5000/all-marks", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch("http://localhost:5000/all-marks");
       const data = await res.json();
-      console.log("Marks API:", data);
-      setMarks(Array.isArray(data) ? data : data.data || []);
+      setMarks(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.log("Marks fetch error:", err);
-      setMarks([]);
+      console.error("Error fetching marks:", err);
     }
   };
 
-  const handleLogout = () => {
-    localStorage.clear();
-    navigate("/");
-  };
-
-  // ================= ADD / UPDATE MARKS =================
-  const handleSubmit = async () => {
-    if (
-      !selectedStudent ||
-      !selectedSubject ||
-      !grade ||
-      !sgpa ||
-      !semester ||
-      !department
-    ) {
+  const handleAddStudent = async () => {
+    if (!newStudentName || !newStudentRollno || !newStudentEmail || !newStudentPassword) {
       alert("Please fill all fields");
       return;
     }
 
-    const url = editingId
-      ? `http://localhost:5000/update-marks/${editingId}`
-      : "http://localhost:5000/add-marks";
+    try {
+      const res = await fetch("http://localhost:5000/add-student", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: newStudentName,
+          rollno: newStudentRollno,
+          email: newStudentEmail,
+          password: newStudentPassword,
+        }),
+      });
 
-    const method = editingId ? "PUT" : "POST";
+      if (!res.ok) throw new Error();
+
+      setNewStudentName("");
+      setNewStudentRollno("");
+      setNewStudentEmail("");
+      setNewStudentPassword("");
+
+      fetchStudents();
+      alert("Student Added Successfully");
+    } catch {
+      alert("Error adding student");
+    }
+  };
+
+  const handleAddSubject = async () => {
+    if (!newSubject) {
+      alert("Enter subject name");
+      return;
+    }
 
     try {
-      await fetch(url, {
-        method: method,
+      const res = await fetch("http://localhost:5000/add-subject", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ subject_name: newSubject }),
+      });
+
+      if (!res.ok) throw new Error();
+
+      setNewSubject("");
+      fetchSubjects();
+      alert("Subject Added Successfully");
+    } catch {
+      alert("Error adding subject");
+    }
+  };
+
+  const handleAddMarks = async () => {
+    if (!selectedStudent || !selectedSubject || !grade || !sgpa || !semester || !department) {
+      alert("Please fill all fields");
+      return;
+    }
+
+    try {
+      const res = await fetch("http://localhost:5000/add-marks", {
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
@@ -120,183 +163,166 @@ function AdminDashboard() {
         }),
       });
 
-      resetForm();
+      if (!res.ok) throw new Error();
+
+      setGrade("");
+      setSgpa("");
+      setSemester("");
+      setDepartment("");
+      setSelectedStudent("");
+      setSelectedSubject("");
+
       fetchMarks();
-    } catch (error) {
-      console.log("Submit error:", error);
+      alert("Marks Added Successfully");
+    } catch {
+      alert("Error adding marks");
     }
   };
 
-  const handleEdit = (mark) => {
-    setEditingId(mark.id);
-    setSelectedStudent(mark.student_id);
-    setSelectedSubject(mark.subject_id);
-    setGrade(mark.grade);
-    setSgpa(mark.sgpa);
-    setSemester(mark.semester);
-    setDepartment(mark.department);
+  const handleLogout = () => {
+    localStorage.clear();
+    navigate("/");
   };
 
-  const handleDelete = async (id) => {
-    try {
-      await fetch(`http://localhost:5000/delete-marks/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      fetchMarks();
-    } catch (error) {
-      console.log("Delete error:", error);
-    }
-  };
-
-  const resetForm = () => {
-    setEditingId(null);
-    setSelectedStudent("");
-    setSelectedSubject("");
-    setGrade("");
-    setSgpa("");
-    setSemester("");
-    setDepartment("");
-  };
-
-  if (loading) {
-    return <h2 style={{ textAlign: "center" }}>Loading...</h2>;
-  }
+  if (loading) return <h2 style={{ padding: "20px" }}>Loading...</h2>;
 
   return (
-    <div style={styles.container}>
-      <h1>Admin Dashboard</h1>
+    <div className="admin-container">
+      {/* SIDEBAR */}
+      <div className={`sidebar ${collapsed ? "collapsed" : ""}`}>
+        <h2>{collapsed ? "SA" : "SLEA Admin"}</h2>
 
-      {/* ADD / EDIT FORM */}
-      <div style={styles.card}>
-        <h2>{editingId ? "Edit Marks" : "Add Marks"}</h2>
+        <div className="toggle-btn" onClick={() => setCollapsed(!collapsed)}>
+          {collapsed ? "➡️" : "⬅️"}
+        </div>
 
-        <select
-          value={selectedStudent}
-          onChange={(e) => setSelectedStudent(e.target.value)}
-        >
-          <option value="">Select Student</option>
-          {students.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
+        <button onClick={() => setActiveTab("dashboard")}>
+          {collapsed ? "📊" : "Dashboard"}
+        </button>
 
-        <select
-          value={selectedSubject}
-          onChange={(e) => setSelectedSubject(e.target.value)}
-        >
-          <option value="">Select Subject</option>
-          {subjects.map((sub) => (
-            <option key={sub.id} value={sub.id}>
-              {sub.subject_name}
-            </option>
-          ))}
-        </select>
+        <button onClick={() => setActiveTab("students")}>
+          {collapsed ? "👨‍🎓" : "Students"}
+        </button>
 
-        <input
-          type="text"
-          placeholder="Grade"
-          value={grade}
-          onChange={(e) => setGrade(e.target.value)}
-        />
+        <button onClick={() => setActiveTab("subjects")}>
+          {collapsed ? "📘" : "Subjects"}
+        </button>
 
-        <input
-          type="number"
-          step="0.01"
-          placeholder="SGPA"
-          value={sgpa}
-          onChange={(e) => setSgpa(e.target.value)}
-        />
+        <button onClick={() => setActiveTab("marks")}>
+          {collapsed ? "📝" : "Marks"}
+        </button>
 
-        <input
-          type="number"
-          placeholder="Semester"
-          value={semester}
-          onChange={(e) => setSemester(e.target.value)}
-        />
-
-        <input
-          type="text"
-          placeholder="Department"
-          value={department}
-          onChange={(e) => setDepartment(e.target.value)}
-        />
-
-        <button onClick={handleSubmit}>
-          {editingId ? "Update Marks" : "Add Marks"}
+        <button onClick={handleLogout}>
+          {collapsed ? "🚪" : "Logout"}
         </button>
       </div>
 
-      {/* MARKS TABLE */}
-      <div style={styles.card}>
-        <h2>All Marks</h2>
+      {/* MAIN CONTENT */}
+      <div className={`main-content ${collapsed ? "collapsed" : ""}`}>
 
-        {marks.length === 0 ? (
-          <p>No marks available</p>
-        ) : (
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th>Student</th>
-                <th>Subject</th>
-                <th>Grade</th>
-                <th>SGPA</th>
-                <th>Semester</th>
-                <th>Department</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {marks.map((m) => (
-                <tr key={m.id}>
-                  <td>{m.student_name || m.student_id}</td>
-                  <td>{m.subject_name || m.subject_id}</td>
-                  <td>{m.grade}</td>
-                  <td>{m.sgpa}</td>
-                  <td>{m.semester}</td>
-                  <td>{m.department}</td>
-                  <td>
-                    <button onClick={() => handleEdit(m)}>Edit</button>
-                    <button
-                      onClick={() => handleDelete(m.id)}
-                      style={{ background: "red", color: "white" }}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {activeTab === "dashboard" && (
+          <div className="tab-section">
+            <h1>Admin Overview</h1>
+            <div className="stats">
+              <div className="stat-card">
+                <h3>Total Students</h3>
+                <p>{students.length}</p>
+              </div>
+              <div className="stat-card">
+                <h3>Total Subjects</h3>
+                <p>{subjects.length}</p>
+              </div>
+              <div className="stat-card">
+                <h3>Total Marks Entries</h3>
+                <p>{marks.length}</p>
+              </div>
+            </div>
+          </div>
         )}
 
-        <br />
-        <button onClick={handleLogout}>Logout</button>
+        {activeTab === "students" && (
+          <div className="tab-section">
+            <h1>Add Student</h1>
+            <div className="form-card">
+              <input placeholder="Student Name" value={newStudentName} onChange={(e) => setNewStudentName(e.target.value)} />
+              <input placeholder="Email" value={newStudentEmail} onChange={(e) => setNewStudentEmail(e.target.value)} />
+              <input placeholder="Roll Number" value={newStudentRollno} onChange={(e) => setNewStudentRollno(e.target.value)} />
+              <input
+                type="password"
+                placeholder="Password"
+                value={newStudentPassword}
+                onChange={(e) => setNewStudentPassword(e.target.value)}
+              />
+              <button onClick={handleAddStudent}>Add Student</button>
+            </div>
+
+            <h2>All Students</h2>
+            <ul className="list">
+              {students.map((s) => (
+                <li key={s.id}>
+                  {s.name} — {s.rollno} — {s.email}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {activeTab === "subjects" && (
+          <div className="tab-section">
+            <h1>Add Subject</h1>
+            <div className="form-card">
+              <input
+                placeholder="Subject Name"
+                value={newSubject}
+                onChange={(e) => setNewSubject(e.target.value)}
+              />
+              <button onClick={handleAddSubject}>Add Subject</button>
+            </div>
+
+            <h2>All Subjects</h2>
+            <ul className="list">
+              {subjects.map((sub) => (
+                <li key={sub.id}>{sub.subject_name}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {activeTab === "marks" && (
+          <div className="tab-section">
+            <h1>Add Marks</h1>
+            <div className="form-card">
+              <select value={selectedStudent} onChange={(e) => setSelectedStudent(e.target.value)}>
+                <option value="">Select Student</option>
+                {students.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.rollno})
+                  </option>
+                ))}
+              </select>
+
+              <select value={selectedSubject} onChange={(e) => setSelectedSubject(e.target.value)}>
+                <option value="">Select Subject</option>
+                {subjects.map((sub) => (
+                  <option key={sub.id} value={sub.id}>
+                    {sub.subject_name}
+                  </option>
+                ))}
+              </select>
+
+              <input placeholder="Grade" value={grade} onChange={(e) => setGrade(e.target.value)} />
+              <input placeholder="SGPA" value={sgpa} onChange={(e) => setSgpa(e.target.value)} />
+              <input placeholder="Semester" value={semester} onChange={(e) => setSemester(e.target.value)} />
+              <input placeholder="Department" value={department} onChange={(e) => setDepartment(e.target.value)} />
+
+              <button onClick={handleAddMarks}>Add Marks</button>
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
 }
-
-const styles = {
-  container: {
-    padding: "30px",
-    fontFamily: "Arial",
-    background: "#f4f6f9",
-    minHeight: "100vh",
-  },
-  card: {
-    background: "white",
-    padding: "20px",
-    borderRadius: "10px",
-    marginBottom: "30px",
-    boxShadow: "0px 2px 10px rgba(0,0,0,0.1)",
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-  },
-};
 
 export default AdminDashboard;

@@ -8,7 +8,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer
+  ResponsiveContainer,
 } from "recharts";
 
 function StudentDashboard() {
@@ -16,8 +16,8 @@ function StudentDashboard() {
 
   const [marks, setMarks] = useState([]);
   const [attendance, setAttendance] = useState([]);
-  const [selectedSemester, setSelectedSemester] = useState("All");
   const [studentName, setStudentName] = useState("");
+  const [selectedSemester, setSelectedSemester] = useState("All");
   const [loading, setLoading] = useState(true);
 
   const studentId = localStorage.getItem("userId");
@@ -26,47 +26,60 @@ function StudentDashboard() {
   useEffect(() => {
     if (!studentId || !token) {
       navigate("/");
-    } else {
-      loadData();
+      return;
     }
+
+    loadData();
   }, []);
 
   const loadData = async () => {
     try {
-      await Promise.all([
-        fetchMarks(),
-        fetchStudent(),
-        fetchAttendance()
-      ]);
-      setLoading(false);
+      await Promise.all([fetchMarks(), fetchStudent(), fetchAttendance()]);
     } catch (error) {
-      console.log("Error loading data:", error);
+      console.error("Error loading data:", error);
+    } finally {
       setLoading(false);
     }
   };
 
   const fetchMarks = async () => {
-    const res = await fetch(
-      `http://localhost:5000/student-marks/${studentId}`
-    );
-    const data = await res.json();
-    setMarks(Array.isArray(data) ? data : []);
+    try {
+      const res = await fetch(`http://localhost:5000/student-marks/${studentId}`, {
+       headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setMarks(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Marks error:", err);
+      setMarks([]);
+    }
   };
 
   const fetchStudent = async () => {
-    const res = await fetch(
-      `http://localhost:5000/student/${studentId}`
-    );
-    const data = await res.json();
-    setStudentName(data?.name || "");
+    try {
+      const res = await fetch(`http://localhost:5000/student/${studentId}`, {
+       headers: { Authorization: `Bearer ${token}` },
+
+      });
+      const data = await res.json();
+      setStudentName(data?.name || "Student");
+    } catch (err) {
+      console.error("Student error:", err);
+    }
   };
 
   const fetchAttendance = async () => {
-    const res = await fetch(
-      `http://localhost:5000/student-attendance/${studentId}`
-    );
-    const data = await res.json();
-    setAttendance(Array.isArray(data) ? data : []);
+    try {
+      const res = await fetch(`http://localhost:5000/student-attendance/${studentId}`, {
+       headers: { Authorization: `Bearer ${token}` },
+
+      });
+      const data = await res.json();
+      setAttendance(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Attendance error:", err);
+      setAttendance([]);
+    }
   };
 
   const handleLogout = () => {
@@ -74,50 +87,58 @@ function StudentDashboard() {
     navigate("/");
   };
 
-  // FILTER MARKS
+  // Filter by semester
   const filteredMarks =
     selectedSemester === "All"
       ? marks
-      : marks.filter(
-          (m) => String(m.semester) === selectedSemester
-        );
+      : marks.filter((m) => String(m.semester) === selectedSemester);
 
-  // CALCULATE CGPA
+  // Calculate CGPA
   const overallCGPA =
     filteredMarks.length > 0
       ? (
-          filteredMarks.reduce(
-            (sum, m) => sum + Number(m.sgpa || 0),
-            0
-          ) / filteredMarks.length
+          filteredMarks.reduce((sum, m) => sum + Number(m.sgpa || 0), 0) /
+          filteredMarks.length
         ).toFixed(2)
       : "0.00";
 
-  // CALCULATE ATTENDANCE
+  // Calculate Attendance
   const overallAttendance =
     attendance.length > 0
       ? (
           attendance.reduce(
-            (sum, a) =>
-              sum + Number(a.attendance_percentage || 0),
+            (sum, a) => sum + Number(a.attendance_percentage || 0),
             0
           ) / attendance.length
         ).toFixed(2)
       : "0.00";
 
-  if (loading) return <h2 style={{ padding: "20px" }}>Loading...</h2>;
+  //  FIX: Semester enum 1–8
+  const semesters = ["All", "1", "2", "3", "4", "5", "6", "7", "8"];
+
+  if (loading) {
+    return (
+      <div className="loading-container">
+        <h2>Loading Dashboard...</h2>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard-container">
+      {/* Sidebar */}
       <div className="sidebar">
         <h2>SLEA</h2>
         <button onClick={handleLogout}>Logout</button>
       </div>
 
+      {/* Main Content */}
       <div className="main-content">
-        <h1>Welcome, {studentName || "Student"}</h1>
+        {/*  studentName */}
+       
+        <h1>Welcome, {studentName || "Student"}</h1> 
 
-        {/* SUMMARY */}
+        {/* Summary Cards */}
         <div className="summary">
           <div className="summary-card">
             <h3>Total Subjects</h3>
@@ -125,7 +146,7 @@ function StudentDashboard() {
           </div>
 
           <div className="summary-card">
-            <h3>Overall SGPA</h3>
+            <h3>Overall CGPA</h3>
             <p>{overallCGPA}</p>
           </div>
 
@@ -135,35 +156,22 @@ function StudentDashboard() {
           </div>
         </div>
 
-        {/* SEMESTER FILTER */}
-        <select
-          value={selectedSemester}
-          onChange={(e) =>
-            setSelectedSemester(e.target.value)
-          }
-          style={{ marginBottom: "20px", padding: "8px" }}
-        >
-          <option value="All">All Semesters</option>
-          <option value="1">Semester 1</option>
-          <option value="2">Semester 2</option>
-          <option value="3">Semester 3</option>
-          <option value="4">Semester 4</option>
-        </select>
+        {/* Semester Filter */}
+        <div className="filter-container">
+          <select value={selectedSemester} onChange={(e) => setSelectedSemester(e.target.value)}>
+            {semesters.map((sem) => (
+              <option key={sem} value={sem}>
+                {sem === "All" ? "All Semesters" : `Semester ${sem}`}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        {/* CHART */}
+        {/* Performance Chart */}
         <h2>Performance Chart</h2>
-        <div
-          style={{
-            width: "100%",
-            height: 300,
-            background: "white",
-            padding: "20px",
-            borderRadius: "10px",
-            marginBottom: "30px"
-          }}
-        >
+        <div className="chart-container">
           {filteredMarks.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={300}>
               <BarChart data={filteredMarks}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="subject_name" />
@@ -177,7 +185,7 @@ function StudentDashboard() {
           )}
         </div>
 
-        {/* SUBJECT CARDS */}
+        {/* Subjects */}
         <h2>Your Subjects</h2>
         <div className="cards">
           {filteredMarks.length > 0 ? (
@@ -195,7 +203,7 @@ function StudentDashboard() {
           )}
         </div>
 
-        {/* ATTENDANCE */}
+        {/* Attendance */}
         <h2>Attendance</h2>
         <div className="cards">
           {attendance.length > 0 ? (
