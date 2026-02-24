@@ -4,6 +4,7 @@ import { Routes, Route } from "react-router-dom";
 import Login from "../pages/Login/Login";
 import AdminDashboard from "../pages/Admin/AdminDashboard";
 import StudentDashboard from "../pages/StudentDashboard/StudentDashboard";
+import SuperAdminDashboard from "../pages/SuperAdminDashboard/SuperAdminDashboard";
 
 
 
@@ -11,6 +12,7 @@ function AppLayout() {
   return (
     <Routes>
       <Route path="/" element={<Login />} />
+      <Route path="/superadmin" element={<SuperAdminDashboard />} />
       <Route path="/admin" element={<AdminDashboard />} />
       <Route path="/student-dashboard" element={<StudentDashboard />} />
     </Routes>
