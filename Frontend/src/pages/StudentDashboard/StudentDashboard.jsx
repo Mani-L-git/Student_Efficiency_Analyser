@@ -115,7 +115,7 @@ function StudentDashboard() {
         {/* ── Semester SGPA Overview Chart ── */}
         {semesters.length > 0 && (
           <>
-            <h2 style={{ marginBottom:"12px" }}>Semester SGPA Overview</h2>
+            <h2 style={{ marginBottom:"12px" }}>Semester CGPA Overview</h2>
             <div className="chart-container" style={{ marginBottom:"30px" }}>
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={semesters.map((s) => ({ name: s.semester, SGPA: parseFloat(s.sgpa) }))}>
@@ -280,3 +280,8 @@ function StudentDashboard() {
 }
 
 export default StudentDashboard;
+
+
+
+
+

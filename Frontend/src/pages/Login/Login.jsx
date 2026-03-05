@@ -9,10 +9,11 @@ function Login() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = async () => {
+  const handleLogin = async (e) => {
+    e.preventDefault(); // ✅ important for form submit
+
     const gmailPattern = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
     const specialCharPattern = /[!@#$%^&*(),.?":{}|<>]/;
-
 
     if (!email || !password) {
       alert("Please enter email and password");
@@ -37,7 +38,6 @@ function Login() {
         password,
       });
 
-
       const { token, role, id } = res.data;
 
       if (!token) {
@@ -45,12 +45,10 @@ function Login() {
         return;
       }
 
-      // ✅ Store token correctly (WITHOUT Bearer prefix)
       localStorage.setItem("token", token);
       localStorage.setItem("role", role);
       localStorage.setItem("userId", id);
 
-      // Navigate based on role
       if (role === "admin") {
         navigate("/admin");
       } else if (role === "student") {
@@ -62,14 +60,11 @@ function Login() {
       }
 
     } catch (error) {
-      console.error("Login Error:", error);
-
       if (error.response?.data?.message) {
         alert(error.response.data.message);
       } else {
         alert("Server not connected!");
       }
-
     } finally {
       setLoading(false);
     }
@@ -79,23 +74,34 @@ function Login() {
     <div className="login">
       <h1>SLEA Portal</h1>
 
-      <input
-        type="email"
-        placeholder="Enter Gmail"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-      />
+      {/* FORM  */}
+      <form onSubmit={handleLogin} autoComplete="on">
 
-      <input
-        type="password"
-        placeholder="Enter Password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-      />
+        <input
+          type="email"
+          name="email"                        
+          autoComplete="username"           
+          placeholder="Enter Gmail"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
 
-      <button onClick={handleLogin} disabled={loading}>
-        {loading ? "Logging in..." : "Login"}
-      </button>
+        <input
+          type="password"
+          name="password"                   
+          autoComplete="current-password"   
+          placeholder="Enter Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+
+        <button type="submit" disabled={loading}>
+          {loading ? "Logging in..." : "Login"}
+        </button>
+
+      </form>
     </div>
   );
 }

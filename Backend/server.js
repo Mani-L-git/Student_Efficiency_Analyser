@@ -76,6 +76,52 @@ app.post("/login", async (req, res) => {
 });
 
 /* ==========================
+   SUPERADMIN — DEPARTMENTS
+========================== */
+// Get all departments
+app.get("/superadmin/departments", verifyToken, verifySuperAdmin, async (req, res) => {
+  try {
+    const [rows] = await pool.query("SELECT * FROM departments ORDER BY name ASC");
+    res.json(rows);
+  } catch (error) {
+    console.error("Fetch Departments Error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Add department
+app.post("/superadmin/department", verifyToken, verifySuperAdmin, async (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ message: "Department name required" });
+  }
+  const deptName = name.trim().toUpperCase();
+  try {
+    const [existing] = await pool.query("SELECT id FROM departments WHERE name = ?", [deptName]);
+    if (existing.length > 0) {
+      return res.status(400).json({ message: "Department already exists" });
+    }
+    await pool.query("INSERT INTO departments (name) VALUES (?)", [deptName]);
+    res.json({ message: `Department '${deptName}' added successfully` });
+  } catch (error) {
+    console.error("Add Department Error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Delete department
+app.delete("/superadmin/department/:name", verifyToken, verifySuperAdmin, async (req, res) => {
+  try {
+    const name = req.params.name.toUpperCase();
+    await pool.query("DELETE FROM departments WHERE name = ?", [name]);
+    res.json({ message: `Department '${name}' removed` });
+  } catch (error) {
+    console.error("Delete Department Error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ==========================
    SUPERADMIN — ADD ADMIN
 ========================== */
 app.post("/superadmin/add-admin", verifyToken, verifySuperAdmin, async (req, res) => {
@@ -85,12 +131,13 @@ app.post("/superadmin/add-admin", verifyToken, verifySuperAdmin, async (req, res
     return res.status(400).json({ message: "All fields required" });
   }
 
-  const validDepts = ["IT", "Mechanical", "Civil"];
-  if (!validDepts.includes(department)) {
-    return res.status(400).json({ message: "Invalid department. Use IT, Mechanical, or Civil" });
-  }
-
   try {
+    // Dynamically validate against departments table
+    const [deptRows] = await pool.query("SELECT name FROM departments WHERE name = ?", [department]);
+    if (deptRows.length === 0) {
+      return res.status(400).json({ message: "Invalid department." });
+    }
+
     const [existing] = await pool.query("SELECT id FROM users WHERE email = ?", [email]);
     if (existing.length > 0) {
       return res.status(400).json({ message: "Email already exists" });
@@ -139,12 +186,9 @@ app.delete("/superadmin/admin/:id", verifyToken, verifySuperAdmin, async (req, r
 /* ==========================
    SUPERADMIN — ANNOUNCEMENTS
 ========================== */
-// Get all announcements
 app.get("/announcements", verifyToken, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      "SELECT * FROM announcements ORDER BY created_at DESC"
-    );
+    const [rows] = await pool.query("SELECT * FROM announcements ORDER BY created_at DESC");
     res.json(rows);
   } catch (error) {
     console.error("Fetch Announcements Error:", error);
@@ -152,14 +196,11 @@ app.get("/announcements", verifyToken, async (req, res) => {
   }
 });
 
-// Add announcement (superadmin only)
 app.post("/superadmin/announcement", verifyToken, verifySuperAdmin, async (req, res) => {
-  const { title, message, target } = req.body; // target: 'all' | 'IT' | 'Mechanical' | 'Civil'
-
+  const { title, message, target } = req.body;
   if (!title || !message) {
     return res.status(400).json({ message: "Title and message required" });
   }
-
   try {
     await pool.query(
       "INSERT INTO announcements (title, message, target) VALUES (?, ?, ?)",
@@ -172,7 +213,6 @@ app.post("/superadmin/announcement", verifyToken, verifySuperAdmin, async (req, 
   }
 });
 
-// Delete announcement (superadmin only)
 app.delete("/superadmin/announcement/:id", verifyToken, verifySuperAdmin, async (req, res) => {
   try {
     await pool.query("DELETE FROM announcements WHERE id = ?", [req.params.id]);
@@ -196,7 +236,6 @@ app.get("/superadmin/stats", verifyToken, verifySuperAdmin, async (req, res) => 
     );
     const [[{ totalMarks }]] = await pool.query("SELECT COUNT(*) as totalMarks FROM marks");
 
-    // Students per department
     const [deptStats] = await pool.query(
       "SELECT department, COUNT(*) as count FROM users WHERE role = 'student' AND department IS NOT NULL GROUP BY department"
     );
@@ -218,9 +257,7 @@ app.post("/add-student", verifyToken, verifyAdmin, async (req, res) => {
     return res.status(400).json({ message: "All fields required" });
   }
 
-  // Get admin's department from JWT token
   const adminDepartment = req.user.department;
-
   if (!adminDepartment) {
     return res.status(403).json({ message: "Admin has no department assigned" });
   }
@@ -249,20 +286,16 @@ app.post("/add-student", verifyToken, verifyAdmin, async (req, res) => {
 app.get("/students", verifyToken, verifyAdmin, async (req, res) => {
   try {
     let rows;
-
     if (req.user.role === "superadmin") {
-      // Superadmin sees all students
       [rows] = await pool.query(
         "SELECT id, name, rollno, email, department FROM users WHERE role = 'student'"
       );
     } else {
-      // Admin sees only their department's students
       [rows] = await pool.query(
         "SELECT id, name, rollno, email, department FROM users WHERE role = 'student' AND department = ?",
         [req.user.department]
       );
     }
-
     res.json(rows);
   } catch (error) {
     console.error("Fetch Students Error:", error);
@@ -270,12 +303,8 @@ app.get("/students", verifyToken, verifyAdmin, async (req, res) => {
   }
 });
 
-
-
-
 /* ==========================
    GRADE CALCULATOR HELPER
-   (add this above your routes)
 ========================== */
 function calculateGrade(marks) {
   if (marks >= 91) return { grade: "O",  gradePoints: 10 };
@@ -287,20 +316,12 @@ function calculateGrade(marks) {
   return               { grade: "F",  gradePoints: 0  };
 }
 
-
-// ============================================================
-//  REPLACE these two routes in your server.js
-//  (Find the existing /subjects GET and /add-subject POST)
-// ============================================================
-
-
 /* ==========================
    GET SUBJECTS (dept filtered)
 ========================== */
 app.get("/subjects", verifyToken, async (req, res) => {
   try {
     let rows;
-
     if (req.user.role === "superadmin") {
       [rows] = await pool.query("SELECT * FROM subjects ORDER BY department, subject_name");
     } else if (req.user.role === "admin") {
@@ -309,18 +330,13 @@ app.get("/subjects", verifyToken, async (req, res) => {
         [req.user.department]
       );
     } else {
-      // Student
-      const [userRows] = await pool.query(
-        "SELECT department FROM users WHERE id = ?",
-        [req.user.id]
-      );
+      const [userRows] = await pool.query("SELECT department FROM users WHERE id = ?", [req.user.id]);
       const dept = userRows[0]?.department;
       [rows] = await pool.query(
         "SELECT * FROM subjects WHERE department = ? ORDER BY subject_name",
         [dept]
       );
     }
-
     res.json(rows);
   } catch (error) {
     console.error("Fetch Subjects Error:", error);
@@ -328,22 +344,18 @@ app.get("/subjects", verifyToken, async (req, res) => {
   }
 });
 
-
 /* ==========================
    ADD SUBJECT (admin only — auto dept)
 ========================== */
 app.post("/add-subject", verifyToken, verifyAdmin, async (req, res) => {
   const { subject_name, credits } = req.body;
-
   if (!subject_name || !credits) {
     return res.status(400).json({ message: "Subject name and credits required" });
   }
-
   const department = req.user.department;
   if (!department) {
     return res.status(403).json({ message: "Admin has no department assigned" });
   }
-
   try {
     const [existing] = await pool.query(
       "SELECT id FROM subjects WHERE subject_name = ? AND department = ?",
@@ -352,12 +364,10 @@ app.post("/add-subject", verifyToken, verifyAdmin, async (req, res) => {
     if (existing.length > 0) {
       return res.status(400).json({ message: "Subject already exists in your department" });
     }
-
     await pool.query(
       "INSERT INTO subjects (subject_name, department, credits) VALUES (?, ?, ?)",
       [subject_name, department, credits]
     );
-
     res.json({ message: `Subject added to ${department} department` });
   } catch (error) {
     console.error("Add Subject Error:", error);
@@ -370,26 +380,16 @@ app.post("/add-subject", verifyToken, verifyAdmin, async (req, res) => {
 ========================== */
 app.post("/add-marks", verifyToken, verifyAdmin, async (req, res) => {
   const { student_id, subject_id, marks_scored, semester } = req.body;
-
   if (!student_id || !subject_id || marks_scored === undefined || !semester) {
     return res.status(400).json({ message: "All fields required" });
   }
-
   const department = req.user.department;
   const { grade, gradePoints } = calculateGrade(Number(marks_scored));
-
   try {
-    // Get subject credits
-    const [subjectRows] = await pool.query(
-      "SELECT credits FROM subjects WHERE id = ?",
-      [subject_id]
-    );
-    if (subjectRows.length === 0) {
-      return res.status(404).json({ message: "Subject not found" });
-    }
+    const [subjectRows] = await pool.query("SELECT credits FROM subjects WHERE id = ?", [subject_id]);
+    if (subjectRows.length === 0) return res.status(404).json({ message: "Subject not found" });
     const credits = subjectRows[0].credits;
 
-    // Prevent duplicate entry
     const [dup] = await pool.query(
       "SELECT id FROM marks WHERE student_id = ? AND subject_id = ? AND semester = ?",
       [student_id, subject_id, semester]
@@ -404,10 +404,8 @@ app.post("/add-marks", verifyToken, verifyAdmin, async (req, res) => {
       [student_id, subject_id, marks_scored, grade, gradePoints, semester, department]
     );
 
-    // Return updated SGPA for that semester
     const [semMarks] = await pool.query(
-      `SELECT m.grade_points, s.credits
-       FROM marks m JOIN subjects s ON m.subject_id = s.id
+      `SELECT m.grade_points, s.credits FROM marks m JOIN subjects s ON m.subject_id = s.id
        WHERE m.student_id = ? AND m.semester = ?`,
       [student_id, semester]
     );
@@ -415,16 +413,12 @@ app.post("/add-marks", verifyToken, verifyAdmin, async (req, res) => {
     const weightedSum  = semMarks.reduce((sum, r) => sum + (r.grade_points * r.credits), 0);
     const sgpa = totalCredits > 0 ? (weightedSum / totalCredits).toFixed(2) : "0.00";
 
-    res.json({
-      message: `Marks added — Grade: ${grade}, Points: ${gradePoints}`,
-      grade, gradePoints, sgpa, credits,
-    });
+    res.json({ message: `Marks added — Grade: ${grade}, Points: ${gradePoints}`, grade, gradePoints, sgpa, credits });
   } catch (error) {
     console.error("Add Marks Error:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
-
 
 /* ==========================
    GET ALL MARKS (ADMIN)
@@ -453,7 +447,6 @@ app.get("/all-marks", verifyToken, verifyAdmin, async (req, res) => {
   }
 });
 
-
 /* ==========================
    GET SINGLE STUDENT
 ========================== */
@@ -476,15 +469,12 @@ app.get("/student/:id", verifyToken, async (req, res) => {
 app.get("/student-marks/:id", verifyToken, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT m.*, s.subject_name, s.credits
-       FROM marks m
+      `SELECT m.*, s.subject_name, s.credits FROM marks m
        JOIN subjects s ON m.subject_id = s.id
-       WHERE m.student_id = ?
-       ORDER BY m.semester`,
+       WHERE m.student_id = ? ORDER BY m.semester`,
       [req.params.id]
     );
 
-    // Group by semester
     const semesterMap = {};
     for (const row of rows) {
       if (!semesterMap[row.semester]) {
@@ -495,14 +485,12 @@ app.get("/student-marks/:id", verifyToken, async (req, res) => {
       semesterMap[row.semester].weightedSum  += Number(row.grade_points) * Number(row.credits);
     }
 
-    // Build per-semester SGPA
     const semesters = Object.keys(semesterMap).map((sem) => {
       const { subjects, totalCredits, weightedSum } = semesterMap[sem];
       const sgpa = totalCredits > 0 ? (weightedSum / totalCredits).toFixed(2) : "0.00";
       return { semester: sem, sgpa, subjects };
     });
 
-    // Overall CGPA
     const allCredits  = rows.reduce((sum, r) => sum + Number(r.credits), 0);
     const allWeighted = rows.reduce((sum, r) => sum + Number(r.grade_points) * Number(r.credits), 0);
     const cgpa = allCredits > 0 ? (allWeighted / allCredits).toFixed(2) : "0.00";
@@ -520,9 +508,8 @@ app.get("/student-marks/:id", verifyToken, async (req, res) => {
 app.get("/student-attendance/:id", verifyToken, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT a.*, s.subject_name 
-       FROM attendance a 
-       JOIN subjects s ON a.subject_id = s.id 
+      `SELECT a.*, s.subject_name FROM attendance a
+       JOIN subjects s ON a.subject_id = s.id
        WHERE a.student_id = ?`,
       [req.params.id]
     );
