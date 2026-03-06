@@ -53,6 +53,11 @@ function StudentDashboard() {
   // ── Efficiency score ─────────────────────
   const [effScore, setEffScore] = useState(null);
 
+  // ── FIX #6: Change password ──────────────
+  const [curPwd, setCurPwd] = useState("");
+  const [newPwd, setNewPwd] = useState("");
+  const [pwdMsg, setPwdMsg] = useState("");
+
   /* ── Auth header helper ─────────────── */
   const authHeader = { Authorization: `Bearer ${token}` };
 
@@ -186,6 +191,22 @@ function StudentDashboard() {
   /* ─────────────────────────────────────
      HELPERS
   ───────────────────────────────────── */
+  /* ── FIX #6: Change password ── */
+  const handleChangePassword = async () => {
+    if (!curPwd || !newPwd) { setPwdMsg("❌ Fill both fields"); return; }
+    try {
+      const res  = await fetch("http://localhost:5000/change-password", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...authHeader },
+        body: JSON.stringify({ current_password: curPwd, new_password: newPwd }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setPwdMsg(`❌ ${data.message}`); return; }
+      setPwdMsg("✅ Password changed successfully!");
+      setCurPwd(""); setNewPwd("");
+    } catch { setPwdMsg("❌ Server error"); }
+  };
+
   const handleLogout = () => { localStorage.clear(); navigate("/"); };
 
   const activeSem = semesters.find((s) => s.semester === selectedSemester) || null;
@@ -256,6 +277,14 @@ function StudentDashboard() {
           style={{ background: showGradeRef ? "#7c3aed" : "#334155", marginBottom: "8px" }}
         >
           📋 Grade Reference
+        </button>
+
+        {/* FIX #6: Password tab */}
+        <button
+          onClick={() => setActiveTab("Password")}
+          style={{ background: activeTab === "Password" ? "#38bdf8" : "#334155", marginBottom: "8px" }}
+        >
+          🔒 Password
         </button>
 
         <button onClick={handleLogout} style={{ background: "#ef4444", marginTop: "auto" }}>
@@ -430,82 +459,158 @@ function StudentDashboard() {
             </div>
 
             {/* ── Efficiency Score Widget ── */}
-            {effScore && (
-              <div style={{
-                background: "rgba(30,41,59,0.7)",
-                border: `2px solid ${
-                  effScore.band === "Excellent"         ? "#16a34a" :
-                  effScore.band === "Good"              ? "#2563eb" :
-                  effScore.band === "Needs Improvement" ? "#d97706" : "#dc2626"
-                }`,
-                borderRadius: "16px", padding: "24px", marginBottom: "28px",
-              }}>
-                <h2 style={{ marginBottom: "18px", fontSize: "18px", color: "#e2e8f0" }}>📊 Learning Efficiency Score</h2>
-                <div style={{ display: "flex", gap: "24px", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {effScore && (() => {
+              const bc =
+                effScore.band === "Excellent"         ? "#34d399" :
+                effScore.band === "Good"              ? "#60a5fa" :
+                effScore.band === "Needs Improvement" ? "#fbbf24" : "#f87171";
 
-                  {/* Big score */}
-                  <div style={{ textAlign: "center", minWidth: "130px" }}>
-                    <div style={{
-                      fontSize: "58px", fontWeight: 800, lineHeight: 1,
-                      color:
-                        effScore.band === "Excellent"         ? "#34d399" :
-                        effScore.band === "Good"              ? "#60a5fa" :
-                        effScore.band === "Needs Improvement" ? "#fbbf24" : "#f87171",
-                    }}>
-                      {effScore.finalScore}
-                    </div>
-                    <div style={{
-                      display: "inline-block", marginTop: "8px",
-                      padding: "3px 14px", borderRadius: "999px",
-                      fontWeight: 700, fontSize: "13px",
-                      background:
-                        effScore.band === "Excellent"         ? "rgba(52,211,153,0.2)"  :
-                        effScore.band === "Good"              ? "rgba(96,165,250,0.2)"  :
-                        effScore.band === "Needs Improvement" ? "rgba(251,191,36,0.2)"  : "rgba(248,113,113,0.2)",
-                      color:
-                        effScore.band === "Excellent"         ? "#34d399" :
-                        effScore.band === "Good"              ? "#60a5fa" :
-                        effScore.band === "Needs Improvement" ? "#fbbf24" : "#f87171",
-                      border: `1px solid ${
-                        effScore.band === "Excellent"         ? "#34d399" :
-                        effScore.band === "Good"              ? "#60a5fa" :
-                        effScore.band === "Needs Improvement" ? "#fbbf24" : "#f87171"
-                      }`,
-                    }}>
-                      {effScore.band}
-                    </div>
-                  </div>
+              const pctIcon  = (p) => p >= 90 ? "🏆" : p >= 50 ? "📈" : "📉";
+              const pctColor = (p) => p >= 75 ? "#34d399" : p >= 50 ? "#60a5fa" : "#f87171";
 
-                  {/* Parameter bars */}
-                  <div style={{ flex: 1, minWidth: "200px" }}>
-                    {[
-                      { label: "Skills (30%)",       value: effScore.skillScore,       color: "#a78bfa" },
-                      { label: "Achievements (20%)", value: effScore.achievementScore, color: "#fbbf24" },
-                      { label: "Activities (20%)",   value: effScore.activityScore,    color: "#34d399" },
-                      { label: "SGPA (30%)",         value: effScore.sgpaScore,        color: "#38bdf8" },
-                    ].map(({ label, value, color }) => (
-                      <div key={label} style={{ marginBottom: "12px" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-                          <span style={{ fontSize: "12px", color: "#94a3b8" }}>{label}</span>
-                          <span style={{ fontSize: "12px", fontWeight: 700, color }}>{value ?? 0}/100</span>
-                        </div>
-                        <div style={{ height: "6px", background: "rgba(255,255,255,0.08)", borderRadius: "3px", overflow: "hidden" }}>
-                          <div style={{ height: "100%", width: `${value ?? 0}%`, background: color, borderRadius: "3px", transition: "width 1s ease" }} />
+              const params = [
+                { label:"Skills",       weight:"30%", color:"#a78bfa", dept: effScore.deptPercentile?.skill,        all: effScore.allPercentile?.skill       },
+                { label:"Achievements", weight:"20%", color:"#fbbf24", dept: effScore.deptPercentile?.achievement,  all: effScore.allPercentile?.achievement  },
+                { label:"Activities",   weight:"20%", color:"#34d399", dept: effScore.deptPercentile?.activity,     all: effScore.allPercentile?.activity     },
+                { label:"CGPA",         weight:"30%", color:"#38bdf8", dept: effScore.deptPercentile?.cgpa,         all: effScore.allPercentile?.cgpa         },
+              ];
+
+              return (
+                <div style={{
+                  background:"linear-gradient(135deg,rgba(15,23,42,0.95),rgba(30,41,59,0.9))",
+                  border:`2px solid ${bc}`,
+                  borderRadius:"20px", padding:"28px", marginBottom:"28px",
+                  boxShadow:`0 8px 32px ${bc}22`,
+                }}>
+
+                  {/* Header row */}
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"24px", flexWrap:"wrap", gap:"12px" }}>
+                    <h2 style={{ margin:0, fontSize:"18px", color:"#e2e8f0", fontWeight:700 }}>
+                      📊 Learning Efficiency Score
+                    </h2>
+                    <div style={{ display:"flex", gap:"10px" }}>
+                      <div style={{ background:"rgba(167,139,250,0.15)", border:"1px solid #a78bfa", borderRadius:"10px", padding:"6px 16px", textAlign:"center" }}>
+                        <div style={{ fontSize:"10px", color:"#a78bfa", fontWeight:600, letterSpacing:"0.5px" }}>DEPT RANK</div>
+                        <div style={{ fontSize:"20px", fontWeight:800, color:"#a78bfa", lineHeight:1.2 }}>
+                          #{effScore.deptRank ?? "—"}
+                          <span style={{ fontSize:"11px", color:"#64748b", fontWeight:400 }}>/{effScore.deptTotal ?? "—"}</span>
                         </div>
                       </div>
-                    ))}
+                      <div style={{ background:"rgba(56,189,248,0.15)", border:"1px solid #38bdf8", borderRadius:"10px", padding:"6px 16px", textAlign:"center" }}>
+                        <div style={{ fontSize:"10px", color:"#38bdf8", fontWeight:600, letterSpacing:"0.5px" }}>OVERALL RANK</div>
+                        <div style={{ fontSize:"20px", fontWeight:800, color:"#38bdf8", lineHeight:1.2 }}>
+                          #{effScore.overallRank ?? "—"}
+                          <span style={{ fontSize:"11px", color:"#64748b", fontWeight:400 }}>/{effScore.overallTotal ?? "—"}</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* CGPA box */}
-                  <div style={{ background: "rgba(15,23,42,0.5)", borderRadius: "10px", padding: "14px 18px", textAlign: "center", minWidth: "90px" }}>
-                    <p style={{ color: "#94a3b8", fontSize: "11px" }}>CGPA</p>
-                    <p style={{ color: "#38bdf8", fontWeight: 700, fontSize: "26px" }}>{effScore.cgpa}</p>
-                    <p style={{ color: "#64748b", fontSize: "10px", marginTop: "2px" }}>= {effScore.sgpaScore}/100</p>
-                  </div>
+                  <div style={{ display:"flex", gap:"24px", flexWrap:"wrap", alignItems:"flex-start" }}>
 
+                    {/* Left — score circle + CGPA + overall standing */}
+                    <div style={{ textAlign:"center", minWidth:"150px" }}>
+                      {/* Circular score */}
+                      <div style={{
+                        width:"120px", height:"120px", borderRadius:"50%", margin:"0 auto",
+                        background:`conic-gradient(${bc} ${effScore.finalScore * 3.6}deg, rgba(255,255,255,0.05) 0deg)`,
+                        display:"flex", alignItems:"center", justifyContent:"center",
+                      }}>
+                        <div style={{
+                          width:"94px", height:"94px", borderRadius:"50%",
+                          background:"rgba(10,16,30,0.95)",
+                          display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+                        }}>
+                          <span style={{ fontSize:"30px", fontWeight:800, color:bc, lineHeight:1 }}>{effScore.finalScore}</span>
+                          <span style={{ fontSize:"9px", color:"#475569" }}>out of 100</span>
+                        </div>
+                      </div>
+
+                      {/* Band */}
+                      <div style={{
+                        display:"inline-block", marginTop:"10px",
+                        padding:"4px 16px", borderRadius:"999px", fontWeight:700, fontSize:"12px",
+                        background:`${bc}22`, color:bc, border:`1px solid ${bc}55`,
+                      }}>{effScore.band}</div>
+
+                      {/* CGPA — out of 10 */}
+                      <div style={{ marginTop:"12px", background:"rgba(56,189,248,0.08)", border:"1px solid rgba(56,189,248,0.2)", borderRadius:"10px", padding:"10px 16px" }}>
+                        <div style={{ fontSize:"10px", color:"#64748b", marginBottom:"2px" }}>CGPA</div>
+                        <div style={{ fontSize:"26px", fontWeight:800, color:"#38bdf8", lineHeight:1 }}>{effScore.cgpa}</div>
+                        <div style={{ fontSize:"10px", color:"#475569", marginTop:"2px" }}>out of 10</div>
+                      </div>
+
+                      {/* Overall standing pills */}
+                      <div style={{ marginTop:"10px", background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:"10px", padding:"10px 12px" }}>
+                        <div style={{ fontSize:"10px", color:"#64748b", marginBottom:"6px" }}>Overall Standing</div>
+                        <div style={{ fontSize:"12px", color:pctColor(effScore.allPercentile?.overall??0), fontWeight:600, marginBottom:"3px" }}>
+                          {pctIcon(effScore.allPercentile?.overall??0)} Top {Math.max(1, 100-(effScore.allPercentile?.overall??0))}% overall
+                        </div>
+                        <div style={{ fontSize:"12px", color:pctColor(effScore.deptPercentile?.overall??0), fontWeight:600 }}>
+                          {pctIcon(effScore.deptPercentile?.overall??0)} Top {Math.max(1, 100-(effScore.deptPercentile?.overall??0))}% in dept
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right — parameter cards (NO raw scores, only percentiles + bar) */}
+                    <div style={{ flex:1, minWidth:"260px" }}>
+                      {params.map(({ label, weight, color, dept, all }) => {
+                        const deptPct = dept ?? 0;
+                        const allPct  = all  ?? 0;
+                        return (
+                          <div key={label} style={{
+                            background:"rgba(255,255,255,0.03)",
+                            border:"1px solid rgba(255,255,255,0.07)",
+                            borderRadius:"12px", padding:"14px 16px", marginBottom:"10px",
+                          }}>
+                            {/* Label + weight */}
+                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"10px" }}>
+                              <span style={{ fontSize:"14px", color:"#e2e8f0", fontWeight:700 }}>{label}</span>
+                              <span style={{ fontSize:"11px", color:"#475569", background:"rgba(255,255,255,0.05)", padding:"2px 8px", borderRadius:"999px" }}>{weight}</span>
+                            </div>
+
+                            {/* Two percentile bars side by side */}
+                            <div style={{ display:"flex", gap:"10px" }}>
+
+                              {/* Dept */}
+                              <div style={{ flex:1, background:`${pctColor(deptPct)}10`, border:`1px solid ${pctColor(deptPct)}30`, borderRadius:"10px", padding:"10px 12px" }}>
+                                <div style={{ display:"flex", alignItems:"center", gap:"5px", marginBottom:"6px" }}>
+                                  <span style={{ fontSize:"15px" }}>{pctIcon(deptPct)}</span>
+                                  <span style={{ fontSize:"10px", color:"#64748b", fontWeight:600 }}>In Department</span>
+                                </div>
+                                {/* Bar */}
+                                <div style={{ height:"6px", background:"rgba(255,255,255,0.07)", borderRadius:"3px", overflow:"hidden", marginBottom:"5px" }}>
+                                  <div style={{ height:"100%", width:`${deptPct}%`, background:`linear-gradient(90deg,${pctColor(deptPct)}88,${pctColor(deptPct)})`, borderRadius:"3px", transition:"width 1.2s ease" }}/>
+                                </div>
+                                <div style={{ fontSize:"13px", fontWeight:800, color:pctColor(deptPct) }}>
+                                  Better than {deptPct}%
+                                </div>
+                              </div>
+
+                              {/* Overall */}
+                              <div style={{ flex:1, background:`${pctColor(allPct)}10`, border:`1px solid ${pctColor(allPct)}30`, borderRadius:"10px", padding:"10px 12px" }}>
+                                <div style={{ display:"flex", alignItems:"center", gap:"5px", marginBottom:"6px" }}>
+                                  <span style={{ fontSize:"15px" }}>{pctIcon(allPct)}</span>
+                                  <span style={{ fontSize:"10px", color:"#64748b", fontWeight:600 }}>Overall</span>
+                                </div>
+                                <div style={{ height:"6px", background:"rgba(255,255,255,0.07)", borderRadius:"3px", overflow:"hidden", marginBottom:"5px" }}>
+                                  <div style={{ height:"100%", width:`${allPct}%`, background:`linear-gradient(90deg,${pctColor(allPct)}88,${pctColor(allPct)})`, borderRadius:"3px", transition:"width 1.2s ease" }}/>
+                                </div>
+                                <div style={{ fontSize:"13px", fontWeight:800, color:pctColor(allPct) }}>
+                                  Better than {allPct}%
+                                </div>
+                              </div>
+
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* ── Semester SGPA Overview Chart ── */}
             {semesters.length > 0 && (
@@ -521,9 +626,11 @@ function StudentDashboard() {
                       <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 12 }} />
                       <YAxis domain={[0, 10]} tick={{ fill: "#94a3b8" }} />
                       <Tooltip
-                        contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px" }}
-                        labelStyle={{ color: "#e2e8f0" }}
+                        contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", boxShadow: "0 4px 16px rgba(0,0,0,0.4)" }}
+                        labelStyle={{ color: "#e2e8f0", fontWeight: 600 }}
                         itemStyle={{ color: "#38bdf8" }}
+                        wrapperStyle={{ outline: "none" }}
+                        cursor={{ fill: "rgba(255,255,255,0.05)" }}
                       />
                       {/* ✅ CHANGE: barSize reduced to 18 (was default ~full width) */}
                       <Bar dataKey="SGPA" radius={[3, 3, 0, 0]} barSize={18}>
@@ -596,6 +703,29 @@ function StudentDashboard() {
                       </div>
                     </div>
 
+                    {/* FIX #7: Grade Reference shown in chart section */}
+                    <div style={{
+                      background:"rgba(30,41,59,0.7)", border:"1px solid rgba(56,189,248,0.2)",
+                      borderRadius:"10px", padding:"14px 18px", marginBottom:"18px",
+                    }}>
+                      <p style={{color:"#94a3b8",fontSize:"13px",fontWeight:600,marginBottom:"10px"}}>
+                        📊 Grade Reference
+                      </p>
+                      <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+                        {GRADE_REFERENCE.map(({range,grade,pts})=>(
+                          <div key={grade} style={{
+                            background:(GRADE_COLOR[grade]||"#64748b")+"18",
+                            border:`1px solid ${GRADE_COLOR[grade]||"#64748b"}`,
+                            borderRadius:"8px",padding:"6px 12px",textAlign:"center",minWidth:"76px",
+                          }}>
+                            <p style={{fontWeight:700,color:GRADE_COLOR[grade],fontSize:"15px"}}>{grade}</p>
+                            <p style={{fontSize:"10px",color:"#94a3b8"}}>{range}</p>
+                            <p style={{fontSize:"10px",color:"#94a3b8"}}>{pts} pts</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
                     {/* Per-subject grade chart */}
                     {/* ✅ CHANGE: barSize={16} + radius [3,3,0,0] */}
                     <div className="chart-container" style={{ marginBottom: "24px" }}>
@@ -615,8 +745,11 @@ function StudentDashboard() {
                           <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} />
                           <YAxis domain={[0, 10]} tick={{ fill: "#94a3b8" }} />
                           <Tooltip
-                            contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px" }}
-                            labelStyle={{ color: "#e2e8f0" }}
+                            contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", boxShadow: "0 4px 16px rgba(0,0,0,0.4)" }}
+                            labelStyle={{ color: "#e2e8f0", fontWeight: 600 }}
+                            itemStyle={{ color: "#94a3b8" }}
+                            wrapperStyle={{ outline: "none" }}
+                            cursor={{ fill: "rgba(255,255,255,0.05)" }}
                             formatter={(val, name, props) => [val, `Grade: ${props.payload.grade}`]}
                           />
                           <Bar dataKey="GP" radius={[3, 3, 0, 0]} barSize={16}>
@@ -711,6 +844,48 @@ function StudentDashboard() {
             )}
 
           </>
+        )}
+
+        {/* ══════════════ FIX #6: PASSWORD TAB ══════════════ */}
+        {activeTab === "Password" && (
+          <div style={{maxWidth:"420px"}}>
+            <h2 style={{marginBottom:"24px"}}>🔒 Change Password</h2>
+            {pwdMsg && (
+              <div style={{
+                padding:"10px 16px", marginBottom:"16px", borderRadius:"8px", fontWeight:500,
+                background: pwdMsg.startsWith("✅") ? "rgba(22,163,74,0.2)" : "rgba(220,38,38,0.2)",
+                color:      pwdMsg.startsWith("✅") ? "#34d399" : "#f87171",
+                border:`1px solid ${pwdMsg.startsWith("✅")?"#34d399":"#f87171"}`,
+              }}>{pwdMsg}</div>
+            )}
+            <div style={{background:"rgba(30,41,59,0.7)",border:"1px solid rgba(56,189,248,0.2)",borderRadius:"12px",padding:"24px"}}>
+              <input
+                type="password"
+                placeholder="Current Password"
+                value={curPwd}
+                onChange={e=>{setCurPwd(e.target.value);setPwdMsg("");}}
+                style={{width:"100%",padding:"11px 14px",fontSize:"15px",borderRadius:"8px",
+                  border:"1px solid rgba(255,255,255,0.15)",outline:"none",marginBottom:"14px",
+                  boxSizing:"border-box",fontFamily:"inherit",background:"rgba(15,23,42,0.5)",color:"#e2e8f0"}}
+              />
+              <input
+                type="password"
+                placeholder="New Password (min 4 chars)"
+                value={newPwd}
+                onChange={e=>{setNewPwd(e.target.value);setPwdMsg("");}}
+                style={{width:"100%",padding:"11px 14px",fontSize:"15px",borderRadius:"8px",
+                  border:"1px solid rgba(255,255,255,0.15)",outline:"none",marginBottom:"14px",
+                  boxSizing:"border-box",fontFamily:"inherit",background:"rgba(15,23,42,0.5)",color:"#e2e8f0"}}
+              />
+              <button
+                onClick={handleChangePassword}
+                style={{width:"100%",padding:"12px",background:"linear-gradient(90deg,#1e3c72,#2a5298)",
+                  color:"#fff",border:"none",borderRadius:"8px",fontSize:"15px",fontWeight:600,cursor:"pointer"}}
+              >
+                Update Password
+              </button>
+            </div>
+          </div>
         )}
 
       </div>

@@ -136,10 +136,14 @@ export default function SuperAdminDashboard() {
   const [admins,        setAdmins]        = React.useState([]);
   const [departments,   setDepartments]   = React.useState([]);
   const [announcements, setAnnouncements] = React.useState([]);
-  const [replies,       setReplies]       = React.useState({});    
-  const [adminByDept,   setAdminByDept]   = React.useState([]);    
-  const [marksByDept,   setMarksByDept]   = React.useState([]);     
-  const [deptMarksDetail, setDeptMarksDetail] = React.useState(null); 
+  const [replies,       setReplies]       = React.useState({});     // { annId: [] }
+  const [adminByDept,   setAdminByDept]   = React.useState([]);
+  const [marksByDept,   setMarksByDept]   = React.useState([]);
+  const [deptMarksDetail, setDeptMarksDetail] = React.useState(null);
+  /* FIX #9: avg efficiency per dept */
+  const [deptEfficiency, setDeptEfficiency] = React.useState([]);
+  /* FIX #10: marks entries count (student×semester) */
+  const [marksEntries,   setMarksEntries]   = React.useState({ total: 0, byDept: [] });
 
   // ── Forms ─────────────────────────────
   const [adminForm, setAdminForm] = React.useState({ name: "", email: "", password: "", department: "" });
@@ -178,6 +182,8 @@ export default function SuperAdminDashboard() {
     fetchDepartments();
     fetchAdminByDept();
     fetchMarksByDept();
+    fetchDeptEfficiency();
+    fetchMarksEntries();
   };
 
   /* ─────────────────────────────────────
@@ -247,6 +253,26 @@ export default function SuperAdminDashboard() {
       const data = await res.json();
       setMarksByDept(Array.isArray(data) ? data : []);
     } catch (err) { console.error("fetchMarksByDept:", err); }
+  };
+
+  /* FIX #9: avg efficiency per department */
+  const fetchDeptEfficiency = async () => {
+    try {
+      const res  = await fetch("http://localhost:5000/superadmin/dept-efficiency", { headers: getAuthHeader() });
+      if (!res.ok) return;
+      const data = await res.json();
+      setDeptEfficiency(Array.isArray(data) ? data : []);
+    } catch (err) { console.error("fetchDeptEfficiency:", err); }
+  };
+
+  /* FIX #10: marks entries (1 per student per semester) */
+  const fetchMarksEntries = async () => {
+    try {
+      const res  = await fetch("http://localhost:5000/superadmin/marks-entries-count", { headers: getAuthHeader() });
+      if (!res.ok) return;
+      const data = await res.json();
+      setMarksEntries({ total: data.total || 0, byDept: data.byDept || [] });
+    } catch (err) { console.error("fetchMarksEntries:", err); }
   };
 
   /* ✅ NEW: drill-down — click dept to see all marks */
@@ -497,7 +523,7 @@ export default function SuperAdminDashboard() {
           {/* ════ DASHBOARD ════ */}
           {selectedItem === "Dashboard" && (
             <Box>
-              <Typography variant="h4" sx={{ fontWeight: "bold", mb: 3 }}>Welcome, Super Admin </Typography>
+              <Typography variant="h4" sx={{ fontWeight: "bold", mb: 3 }}>Welcome, Super Admin 👋</Typography>
 
               {/* Top stat cards */}
               <div style={{ display: "flex", gap: "20px", marginBottom: "30px", flexWrap: "wrap" }}>
@@ -556,10 +582,68 @@ export default function SuperAdminDashboard() {
                   <p style={{ color: "#94a3b8" }}>No admin data yet.</p>
                 )}
               </div>
+              {/* FIX #10: Total Marks Entries — count 1 per student per semester */}
+              <div style={{ background: "#fff", borderRadius: "12px", padding: "24px", boxShadow: "0 4px 14px rgba(0,0,0,0.08)", marginBottom: "24px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700 }}>Total Marks Entries</Typography>
+                  <div style={{ background: "#16a34a20", border: "1px solid #16a34a", borderRadius: "10px", padding: "8px 20px", textAlign: "center" }}>
+                    <p style={{ fontSize: "11px", color: "#16a34a", fontWeight: 600 }}>TOTAL</p>
+                    <p style={{ fontSize: "24px", fontWeight: 800, color: "#16a34a" }}>{marksEntries.total}</p>
+                  </div>
+                </div>
+                <p style={{ fontSize: "12px", color: "#94a3b8", marginBottom: "14px" }}>
+                  Counted as 1 entry per student per semester (regardless of how many subjects)
+                </p>
+                {marksEntries.byDept.length > 0 ? (
+                  <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                    {marksEntries.byDept.map((d) => (
+                      <div key={d.department} style={{
+                        padding: "14px 22px", borderRadius: "10px", background: "#f8fafc",
+                        border: `2px solid ${getDeptColor(d.department, departments)}`,
+                        textAlign: "center", minWidth: "110px",
+                      }}>
+                        <p style={{ fontWeight: 700, color: getDeptColor(d.department, departments), fontSize: "26px" }}>{d.count}</p>
+                        <p style={{ color: "#475569", fontSize: "12px", marginTop: "4px" }}>{d.department}</p>
+                        <p style={{ color: "#94a3b8", fontSize: "10px" }}>entries</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ color: "#94a3b8" }}>No marks data yet.</p>
+                )}
+              </div>
+
+              {/* FIX #9: Avg efficiency per department */}
+              <div style={{ background: "#fff", borderRadius: "12px", padding: "24px", boxShadow: "0 4px 14px rgba(0,0,0,0.08)", marginBottom: "24px" }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>Average Efficiency Score per Department</Typography>
+                {deptEfficiency.length > 0 ? (
+                  <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+                    {deptEfficiency.map((d) => {
+                      const color = getDeptColor(d.department, departments);
+                      const band  = d.avgEfficiency >= 80 ? "Excellent" : d.avgEfficiency >= 60 ? "Good" : d.avgEfficiency >= 40 ? "Needs Improvement" : "Weak";
+                      const bandC = band==="Excellent"?"#16a34a":band==="Good"?"#2563eb":band==="Needs Improvement"?"#d97706":"#dc2626";
+                      return (
+                        <div key={d.department} style={{
+                          padding: "18px 24px", borderRadius: "12px", background: "#f8fafc",
+                          border: `2px solid ${color}`, textAlign: "center", minWidth: "130px",
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+                        }}>
+                          <p style={{ fontWeight: 700, color, fontSize: "13px", marginBottom: "6px" }}>{d.department}</p>
+                          <p style={{ fontWeight: 800, color: bandC, fontSize: "32px", lineHeight: 1 }}>{d.avgEfficiency}</p>
+                          <p style={{ fontSize: "10px", color: "#94a3b8", marginTop: "4px" }}>avg / 100</p>
+                          <span style={{ display: "inline-block", marginTop: "6px", padding: "2px 10px", borderRadius: "999px", fontSize: "11px", fontWeight: 600, background: bandC+"20", color: bandC }}>{band}</span>
+                          <p style={{ fontSize: "10px", color: "#94a3b8", marginTop: "4px" }}>{d.studentCount} student{d.studentCount!==1?"s":""}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p style={{ color: "#94a3b8" }}>No efficiency data yet. Admins need to add skills/activities for students.</p>
+                )}
+              </div>
+
             </Box>
           )}
-
-          {/* ════ DEPARTMENTS ════ */}
           {selectedItem === "Departments" && (
             <Box>
               <Typography variant="h4" sx={{ fontWeight: "bold", mb: 3 }}>Manage Departments</Typography>

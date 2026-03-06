@@ -10,8 +10,7 @@ function Login() {
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
-    e.preventDefault(); // ✅ important for form submit
-
+    e.preventDefault(); 
     const gmailPattern = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
     const specialCharPattern = /[!@#$%^&*(),.?":{}|<>]/;
 
@@ -72,7 +71,7 @@ function Login() {
 
   return (
     <div className="login">
-      <h1>SLEA Portal</h1>
+      <center><h1>SLEA Portal</h1></center>
 
       {/* FORM  */}
       <form onSubmit={handleLogin} autoComplete="on">
