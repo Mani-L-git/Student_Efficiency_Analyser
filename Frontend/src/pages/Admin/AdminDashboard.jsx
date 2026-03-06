@@ -22,6 +22,7 @@ import AnnouncementIcon from "@mui/icons-material/Announcement";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import LockIcon from "@mui/icons-material/Lock";
 import DeleteIcon from "@mui/icons-material/Delete";
+import EditIcon from "@mui/icons-material/Edit";
 import LogoutIcon from "@mui/icons-material/Logout";
 
 const drawerWidth = 240;
@@ -56,16 +57,20 @@ const MENU = [
 
 const getAuth = () => ({Authorization:`Bearer ${localStorage.getItem("token")}`});
 
+const FONT = "'Inter','Segoe UI','Helvetica Neue',sans-serif";
+
 const S = {
-  inp:{width:"100%",padding:"11px 14px",fontSize:"15px",borderRadius:"8px",
+  inp:{width:"100%",padding:"11px 14px",fontSize:"14px",borderRadius:"8px",
        border:"1px solid #cbd5e1",outline:"none",marginBottom:"14px",
-       boxSizing:"border-box",fontFamily:"inherit",background:"#fff"},
+       boxSizing:"border-box",fontFamily:FONT,background:"#fff",color:"#0f172a"},
   btn:{width:"100%",padding:"12px",background:"linear-gradient(90deg,#1e3c72,#2a5298)",
-       color:"#fff",border:"none",borderRadius:"8px",fontSize:"15px",fontWeight:600,cursor:"pointer"},
+       color:"#fff",border:"none",borderRadius:"8px",fontSize:"14px",fontWeight:600,
+       cursor:"pointer",fontFamily:FONT,letterSpacing:"0.3px"},
   card:{background:"#fff",borderRadius:"12px",padding:"24px",
-        boxShadow:"0 4px 14px rgba(0,0,0,0.07)"},
-  th:{padding:"12px 16px",textAlign:"left",fontSize:"13px"},
-  td:{padding:"12px 16px"},
+        boxShadow:"0 4px 14px rgba(0,0,0,0.07)",fontFamily:FONT},
+  th:{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontFamily:FONT,
+      letterSpacing:"0.6px",textTransform:"uppercase",fontWeight:700},
+  td:{padding:"12px 16px",fontFamily:FONT,fontSize:"13px"},
 };
 
 const bandColor = b =>
@@ -194,17 +199,22 @@ export default function AdminDashboard() {
   const [aMsg,     setAMsg]     = useState("");
 
   /* efficiency */
-  const [eRoll,    setERoll]    = useState("");
-  const [eStud,    setEStud]    = useState(null);
-  const [eErr,     setEErr]     = useState("");
-  const [eSkill,   setESkill]   = useState("");
-  const [eActType, setEActType] = useState("");
-  const [eActDesc, setEActDesc] = useState("");
-  const [eAchName, setEAchName] = useState("");
-  const [eAchPts,  setEAchPts]  = useState("");
-  const [eData,    setEData]    = useState(null);
-  const [eScore,   setEScore]   = useState(null);
-  const [eMsg,     setEMsg]     = useState("");
+  const [eRoll,      setERoll]      = useState("");
+  const [eStud,      setEStud]      = useState(null);
+  const [eErr,       setEErr]       = useState("");
+  const [eType,      setEType]      = useState("");
+  const [eSkill,     setESkill]     = useState("");
+  const [eSkillPts,  setESkillPts]  = useState("");
+  const [eActType,   setEActType]   = useState("");
+  const [eActDesc,   setEActDesc]   = useState("");
+  const [eActPts,    setEActPts]    = useState("");
+  const [eAchName,   setEAchName]   = useState("");
+  const [eAchPts,    setEAchPts]    = useState("");
+  const [eEditId,    setEEditId]    = useState(null);  /* null = adding, id = editing */
+  const [expandedRow, setExpandedRow] = useState(null);
+  const [eData,      setEData]      = useState(null);
+  const [eScore,     setEScore]     = useState(null);
+  const [eMsg,       setEMsg]       = useState("");
 
   /* announcements */
   const [annTitle, setAnnTitle] = useState("");
@@ -361,30 +371,46 @@ export default function AdminDashboard() {
   };
 
   /* ── efficiency ── */
+  const ACT_PTS = {"Club":10,"Workshop":15,"NSS":20,"NCC":25,"Sports":15,"Leadership":20,"Volunteering":15};
+  const resetEForm = () => { setEType(""); setESkill(""); setESkillPts(""); setEActType(""); setEActDesc(""); setEActPts(""); setEAchName(""); setEAchPts(""); setEEditId(null); };
+
   const setSkill = async () => {
-    if(!eStud||!eSkill){setEMsg("❌ Select student and skill");return;}
-    const r=await fetch("http://localhost:5000/admin/student-skill",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({student_id:eStud.id,skill_level:eSkill})});
+    if(!eStud||!eSkill||!eSkillPts){setEMsg("❌ Enter skill name and points");return;}
+    const r=await fetch("http://localhost:5000/admin/student-skill",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({student_id:eStud.id,skill_level:eSkill,skill_score:Number(eSkillPts)})});
     const d=await r.json(); if(!r.ok){setEMsg(`❌ ${d.message}`);return;}
-    setEMsg(`✅ Skill → ${eSkill} (${d.skill_score} pts)`);
-    loadEData(eStud.id); loadEScore(eStud.id); loadAllEff();
+    setEMsg(`✅ Skill saved — ${eSkill} (${eSkillPts} pts)`);
+    resetEForm(); loadEData(eStud.id); loadEScore(eStud.id); loadAllEff();
   };
   const addAct = async () => {
-    if(!eStud||!eActType){setEMsg("❌ Select student and activity");return;}
-    const r=await fetch("http://localhost:5000/admin/student-activity",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({student_id:eStud.id,activity_type:eActType,description:eActDesc})});
-    const d=await r.json(); if(!r.ok){setEMsg(`❌ ${d.message}`);return;}
-    setEMsg(`✅ ${d.message}`); setEActType(""); setEActDesc("");
-    loadEData(eStud.id); loadEScore(eStud.id); loadAllEff();
+    if(!eStud||!eActType){setEMsg("❌ Select activity type");return;}
+    const pts = Number(eActPts) || ACT_PTS[eActType] || 10;
+    if(eEditId) {
+      const r=await fetch(`http://localhost:5000/admin/student-activity/${eEditId}`,{method:"PUT",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({activity_type:eActType,description:eActDesc,points:pts})});
+      const d=await r.json(); if(!r.ok){setEMsg(`❌ ${d.message}`);return;}
+      setEMsg("✅ Activity updated");
+    } else {
+      const r=await fetch("http://localhost:5000/admin/student-activity",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({student_id:eStud.id,activity_type:eActType,description:eActDesc,points:pts})});
+      const d=await r.json(); if(!r.ok){setEMsg(`❌ ${d.message}`);return;}
+      setEMsg("✅ Activity added");
+    }
+    resetEForm(); loadEData(eStud.id); loadEScore(eStud.id); loadAllEff();
   };
   const delAct = async id => {
     await fetch(`http://localhost:5000/admin/student-activity/${id}`,{method:"DELETE",headers:getAuth()});
     loadEData(eStud.id); loadEScore(eStud.id); loadAllEff();
   };
   const addAch = async () => {
-    if(!eStud||!eAchName||!eAchPts){setEMsg("❌ Fill all achievement fields");return;}
-    const r=await fetch("http://localhost:5000/admin/student-achievement",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({student_id:eStud.id,achievement_name:eAchName,points:Number(eAchPts)})});
-    const d=await r.json(); if(!r.ok){setEMsg(`❌ ${d.message}`);return;}
-    setEMsg("✅ Achievement added"); setEAchName(""); setEAchPts("");
-    loadEData(eStud.id); loadEScore(eStud.id); loadAllEff();
+    if(!eStud||!eAchName||!eAchPts){setEMsg("❌ Fill achievement name and points");return;}
+    if(eEditId) {
+      const r=await fetch(`http://localhost:5000/admin/student-achievement/${eEditId}`,{method:"PUT",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({achievement_name:eAchName,points:Number(eAchPts)})});
+      const d=await r.json(); if(!r.ok){setEMsg(`❌ ${d.message}`);return;}
+      setEMsg("✅ Achievement updated");
+    } else {
+      const r=await fetch("http://localhost:5000/admin/student-achievement",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({student_id:eStud.id,achievement_name:eAchName,points:Number(eAchPts)})});
+      const d=await r.json(); if(!r.ok){setEMsg(`❌ ${d.message}`);return;}
+      setEMsg("✅ Achievement added");
+    }
+    resetEForm(); loadEData(eStud.id); loadEScore(eStud.id); loadAllEff();
   };
   const delAch = async id => {
     await fetch(`http://localhost:5000/admin/student-achievement/${id}`,{method:"DELETE",headers:getAuth()});
@@ -446,13 +472,17 @@ export default function AdminDashboard() {
   ════════════════════════════════════════════════════════ */
   return (
     <>
-      <style>{`html,body,#root{height:auto!important;overflow-y:auto!important;overflow-x:hidden}`}</style>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        html,body,#root{height:auto!important;overflow-y:auto!important;overflow-x:hidden;font-family:'Inter','Segoe UI',sans-serif!important}
+        *{font-family:'Inter','Segoe UI',sans-serif}
+      `}</style>
       <Box sx={{display:"flex",alignItems:"flex-start"}}>
         <CssBaseline/>
 
         {/* AppBar */}
         <AppBar position="fixed" sx={{width:`calc(100% - ${drawerWidth}px)`,ml:`${drawerWidth}px`,background:"linear-gradient(90deg,#1e3c72,#2a5298)"}}>
-          <Toolbar><Typography variant="h6" noWrap sx={{fontWeight:700}}>{tab}</Typography></Toolbar>
+          <Toolbar><Typography variant="h6" noWrap sx={{fontWeight:700,fontFamily:"'Inter','Segoe UI',sans-serif"}}>{tab}</Typography></Toolbar>
         </AppBar>
 
         {/* Drawer */}
@@ -523,11 +553,11 @@ export default function AdminDashboard() {
                 )}
               </Box>
               <Box sx={{...S.card,p:0,overflowX:"auto",mb:4}}>
-                <table style={{width:"100%",borderCollapse:"collapse",minWidth:"900px"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"'Inter','Segoe UI',sans-serif"}}>
                   <thead>
                     <tr style={{background:"linear-gradient(90deg,#1e293b,#0f172a)",color:"#fff"}}>
-                      {["#","Student","Roll No","CGPA (/10)","Score /100","Band","Dept Rank","Overall Rank","Better than (Dept)","Better than (All)"].map(h=>(
-                        <th key={h} style={{...S.th,whiteSpace:"nowrap",borderBottom:"2px solid #334155",fontSize:"12px"}}>{h}</th>
+                      {["#","Student","Roll No","CGPA","Att %","Score /100","Band","Dept Rank","Overall Rank",""].map(h=>(
+                        <th key={h} style={{...S.th,whiteSpace:"nowrap",borderBottom:"2px solid #334155",color:"#94a3b8",padding:"10px 12px"}}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -535,71 +565,105 @@ export default function AdminDashboard() {
                     {allEff.map((e,i)=>{
                       const bc = bandColor(e.band);
                       const pctColor = p => p>=75?"#16a34a":p>=50?"#2563eb":"#dc2626";
+                      const pctBg    = p => p>=75?"#dcfce7":p>=50?"#dbeafe":"#fee2e2";
                       const pctIcon  = p => p>=90?"🏆":p>=50?"📈":"📉";
-                      const PctRow = ({label,val}) => (
-                        <div style={{display:"flex",alignItems:"center",gap:"5px",marginBottom:"2px"}}>
-                          <span style={{fontSize:"10px",color:"#94a3b8",width:"44px",flexShrink:0}}>{label}</span>
-                          <span style={{fontSize:"11px"}}>{pctIcon(val??0)}</span>
-                          <span style={{fontSize:"11px",fontWeight:700,color:pctColor(val??0)}}>{val??0}%</span>
-                        </div>
+                      const attRec = attendance.find(a=>a.student_id===e.id||a.student_name===e.name);
+                      const attPct = attRec
+                        ? attRec.present_days&&attRec.total_days>0
+                          ? ((attRec.present_days/attRec.total_days)*100).toFixed(1)
+                          : Number(attRec.attendance_percentage||0).toFixed(1)
+                        : null;
+                      const isExpanded = expandedRow===e.id;
+                      const PctBadge = ({label,val}) => (
+                        <span style={{display:"inline-flex",alignItems:"center",gap:"3px",
+                          background:pctBg(val??0),color:pctColor(val??0),
+                          padding:"3px 9px",borderRadius:"999px",fontSize:"11px",
+                          fontWeight:700,border:`1px solid ${pctColor(val??0)}30`,whiteSpace:"nowrap"}}>
+                          {pctIcon(val??0)} {label} {val??0}%
+                        </span>
                       );
                       return (
-                        <tr key={e.id} style={{borderBottom:"1px solid #f1f5f9"}}
-                          onMouseEnter={ev=>ev.currentTarget.style.background="#f8fafc"}
-                          onMouseLeave={ev=>ev.currentTarget.style.background="transparent"}>
-                          <td style={{...S.td,color:"#94a3b8",fontWeight:600}}>{i+1}</td>
-                          <td style={{...S.td,fontWeight:600}}>{e.name}</td>
-                          <td style={{...S.td,fontFamily:"monospace",fontSize:"13px",color:"#475569"}}>{e.rollno}</td>
-                          {/* CGPA out of 10 */}
-                          <td style={{...S.td}}>
-                            <span style={{fontWeight:700,fontSize:"16px",color:"#0891b2"}}>{e.cgpa}</span>
-                            <span style={{fontSize:"10px",color:"#94a3b8"}}> /10</span>
-                          </td>
-                          {/* Score with mini bar */}
-                          <td style={S.td}>
-                            <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-                              <div style={{width:"48px",height:"6px",background:"#f1f5f9",borderRadius:"3px",overflow:"hidden"}}>
-                                <div style={{height:"100%",width:`${e.finalScore}%`,background:bc,borderRadius:"3px"}}/>
+                        <React.Fragment key={e.id}>
+                          <tr style={{borderBottom: isExpanded?"none":"1px solid #f1f5f9", background: isExpanded?"#f8faff":"transparent"}}
+                            onMouseEnter={ev=>{if(!isExpanded)ev.currentTarget.style.background="#f8fafc"}}
+                            onMouseLeave={ev=>{if(!isExpanded)ev.currentTarget.style.background="transparent"}}>
+                            <td style={{...S.td,color:"#94a3b8",fontWeight:600,fontSize:"13px",padding:"10px 12px"}}>{i+1}</td>
+                            <td style={{...S.td,fontWeight:700,fontSize:"13px",padding:"10px 12px"}}>{e.name}</td>
+                            <td style={{...S.td,fontFamily:"monospace",fontSize:"12px",color:"#475569",padding:"10px 12px"}}>{e.rollno}</td>
+                            <td style={{...S.td,padding:"10px 12px"}}>
+                              <span style={{fontWeight:700,fontSize:"14px",color:"#0891b2"}}>{e.cgpa}</span>
+                            </td>
+                            <td style={{...S.td,padding:"10px 12px"}}>
+                              {attPct!=null
+                                ? <span style={{fontWeight:700,fontSize:"13px",color:parseFloat(attPct)>=75?"#16a34a":"#dc2626"}}>{attPct}%</span>
+                                : <span style={{fontSize:"12px",color:"#cbd5e1"}}>—</span>}
+                            </td>
+                            <td style={{...S.td,padding:"10px 12px"}}>
+                              <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+                                <div style={{width:"36px",height:"5px",background:"#f1f5f9",borderRadius:"3px",overflow:"hidden"}}>
+                                  <div style={{height:"100%",width:`${e.finalScore}%`,background:bc,borderRadius:"3px"}}/>
+                                </div>
+                                <span style={{fontWeight:800,fontSize:"14px",color:bc}}>{e.finalScore}</span>
                               </div>
-                              <span style={{fontWeight:800,fontSize:"15px",color:bc}}>{e.finalScore}</span>
-                            </div>
-                          </td>
-                          {/* Band */}
-                          <td style={S.td}>
-                            <span style={{padding:"3px 10px",borderRadius:"999px",fontSize:"11px",fontWeight:700,
-                              background:bc+"20",color:bc,border:`1px solid ${bc}44`,whiteSpace:"nowrap"}}>
-                              {e.band}
-                            </span>
-                          </td>
-                          {/* Dept Rank */}
-                          <td style={{...S.td,textAlign:"center"}}>
-                            <span style={{fontWeight:800,fontSize:"17px",color:"#7c3aed"}}>#{e.deptRank??'—'}</span>
-                            <span style={{fontSize:"11px",color:"#94a3b8"}}>/{e.deptTotal??'—'}</span>
-                          </td>
-                          {/* Overall Rank */}
-                          <td style={{...S.td,textAlign:"center"}}>
-                            <span style={{fontWeight:800,fontSize:"17px",color:"#2563eb"}}>#{e.overallRank??'—'}</span>
-                            <span style={{fontSize:"11px",color:"#94a3b8"}}>/{e.overallTotal??'—'}</span>
-                          </td>
-                          {/* Better than Dept */}
-                          <td style={S.td}>
-                            <PctRow label="Skills"   val={e.deptPercentile?.skill}/>
-                            <PctRow label="Ach"      val={e.deptPercentile?.achievement}/>
-                            <PctRow label="Activity" val={e.deptPercentile?.activity}/>
-                            <PctRow label="CGPA"     val={e.deptPercentile?.cgpa}/>
-                          </td>
-                          {/* Better than All */}
-                          <td style={S.td}>
-                            <PctRow label="Skills"   val={e.allPercentile?.skill}/>
-                            <PctRow label="Ach"      val={e.allPercentile?.achievement}/>
-                            <PctRow label="Activity" val={e.allPercentile?.activity}/>
-                            <PctRow label="CGPA"     val={e.allPercentile?.cgpa}/>
-                          </td>
-                        </tr>
+                            </td>
+                            <td style={{...S.td,padding:"10px 12px"}}>
+                              <span style={{padding:"3px 9px",borderRadius:"999px",fontSize:"11px",fontWeight:700,
+                                background:bc+"18",color:bc,border:`1px solid ${bc}44`,whiteSpace:"nowrap"}}>
+                                {e.band}
+                              </span>
+                            </td>
+                            <td style={{...S.td,textAlign:"center",padding:"10px 12px"}}>
+                              <span style={{fontWeight:800,fontSize:"15px",color:"#7c3aed"}}>#{e.deptRank??'—'}</span>
+                              <span style={{fontSize:"10px",color:"#94a3b8",display:"block"}}>of {e.deptTotal??'—'}</span>
+                            </td>
+                            <td style={{...S.td,textAlign:"center",padding:"10px 12px"}}>
+                              <span style={{fontWeight:800,fontSize:"15px",color:"#2563eb"}}>#{e.overallRank??'—'}</span>
+                              <span style={{fontSize:"10px",color:"#94a3b8",display:"block"}}>of {e.overallTotal??'—'}</span>
+                            </td>
+                            {/* Expand toggle */}
+                            <td style={{...S.td,padding:"10px 12px",textAlign:"center"}}>
+                              <button onClick={()=>setExpandedRow(isExpanded?null:e.id)} style={{
+                                background: isExpanded?"#e0e7ff":"#f1f5f9",
+                                border:"none",borderRadius:"6px",padding:"4px 10px",
+                                fontSize:"11px",fontWeight:600,cursor:"pointer",
+                                color: isExpanded?"#4338ca":"#64748b",
+                              }}>
+                                {isExpanded?"▲ Hide":"▼ Peers"}
+                              </button>
+                            </td>
+                          </tr>
+                          {/* Expandable peer comparison row */}
+                          {isExpanded && (
+                            <tr style={{borderBottom:"1px solid #f1f5f9",background:"#f8faff"}}>
+                              <td colSpan={10} style={{padding:"8px 16px 16px 16px"}}>
+                                <div style={{display:"flex",gap:"24px",flexWrap:"wrap"}}>
+                                  <div>
+                                    <div style={{fontSize:"10px",fontWeight:700,color:"#7c3aed",letterSpacing:"0.5px",textTransform:"uppercase",marginBottom:"6px"}}>Peer Comparison — Department</div>
+                                    <div style={{display:"flex",flexWrap:"wrap",gap:"5px"}}>
+                                      <PctBadge label="Skills"   val={e.deptPercentile?.skill}/>
+                                      <PctBadge label="Achieve"  val={e.deptPercentile?.achievement}/>
+                                      <PctBadge label="Activity" val={e.deptPercentile?.activity}/>
+                                      <PctBadge label="CGPA"     val={e.deptPercentile?.cgpa}/>
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div style={{fontSize:"10px",fontWeight:700,color:"#2563eb",letterSpacing:"0.5px",textTransform:"uppercase",marginBottom:"6px"}}>Peer Comparison — Overall</div>
+                                    <div style={{display:"flex",flexWrap:"wrap",gap:"5px"}}>
+                                      <PctBadge label="Skills"   val={e.allPercentile?.skill}/>
+                                      <PctBadge label="Achieve"  val={e.allPercentile?.achievement}/>
+                                      <PctBadge label="Activity" val={e.allPercentile?.activity}/>
+                                      <PctBadge label="CGPA"     val={e.allPercentile?.cgpa}/>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       );
                     })}
                     {allEff.length===0&&(
-                      <tr><td colSpan={10} style={{...S.td,textAlign:"center",color:"#94a3b8",padding:"28px"}}>
+                      <tr><td colSpan={10} style={{...S.td,textAlign:"center",color:"#94a3b8",padding:"32px",fontSize:"14px"}}>
                         No efficiency data yet — add skills/activities in the Efficiency tab.
                       </td></tr>
                     )}
@@ -852,146 +916,214 @@ export default function AdminDashboard() {
           {tab==="Efficiency" && (
             <Box>
               <Typography variant="h5" sx={{fontWeight:700,mb:1}}>Student Efficiency Data</Typography>
-              <Typography sx={{color:"#64748b",mb:3,fontSize:"13px",lineHeight:1.7}}>
-                Score = (Skills/MaxSkills × 0.30) + (Achievements/MaxAch × 0.20) + (Activities/MaxAct × 0.20) + (CGPA/10 × 0.30) × 100
+              <Typography sx={{color:"#64748b",mb:3,fontSize:"13px"}}>
+                Score = Skills×30% + Achievements×20% + Activities×20% + CGPA×30% (peer-normalised)
               </Typography>
               <MsgBox msg={eMsg}/>
 
+              {/* ── Step 1: Select Student ── */}
               <Box sx={{...S.card,maxWidth:480,mb:3}}>
-                {/* FIX #4: autocomplete */}
+                <Typography sx={{fontWeight:600,mb:1,fontSize:"13px",color:"#475569"}}>Select Student</Typography>
                 <RollInput value={eRoll}
-                  onChange={v=>{setERoll(v);setEData(null);setEScore(null);rollChange(v,setERoll,setEStud,setEErr);}}
-                  onSelect={s=>{setEStud(s);setERoll(s.rollno);setEErr("");setEData(null);setEScore(null);}}
+                  onChange={v=>{setERoll(v);setEData(null);setEScore(null);resetEForm();rollChange(v,setERoll,setEStud,setEErr);}}
+                  onSelect={s=>{setEStud(s);setERoll(s.rollno);setEErr("");setEData(null);setEScore(null);resetEForm();}}
                   pool={students}/>
                 <FoundBanner student={eStud} error={eErr}/>
               </Box>
 
               {eStud && (
                 <Box sx={{display:"flex",gap:3,flexWrap:"wrap",alignItems:"flex-start"}}>
-                  <Box sx={{flex:"1 1 320px"}}>
 
-                    {/* Skill — show history list like Achievements */}
-                    <Box sx={{...S.card,mb:3}}>
-                      <Typography sx={{fontWeight:700,fontSize:"15px",mb:2}}>🎯 Skill Level</Typography>
-                      <select style={S.inp} value={eSkill} onChange={e=>setESkill(e.target.value)}>
-                        <option value="">Select Level</option>
-                        <option value="Beginner">Beginner (25 pts)</option>
-                        <option value="Intermediate">Intermediate (50 pts)</option>
-                        <option value="Advanced">Advanced (75 pts)</option>
-                        <option value="Expert">Expert (100 pts)</option>
+                  {/* LEFT — Add/Edit form (like subjects form card) */}
+                  <Box sx={{flex:"0 0 340px"}}>
+                    <Box sx={{...S.card,border:`2px solid ${eEditId?"#f59e0b":"#e2e8f0"}`,
+                      background:eEditId?"#fffbeb":"#fff",mb:3}}>
+
+                      <Box sx={{display:"flex",justifyContent:"space-between",alignItems:"center",mb:2}}>
+                        <Typography sx={{fontWeight:700,fontSize:"15px",color:"#0f172a"}}>
+                          {eEditId?"✏️ Edit Entry":"➕ Add Entry"}
+                        </Typography>
+                        {eEditId && (
+                          <button onClick={resetEForm} style={{background:"none",border:"1px solid #cbd5e1",
+                            borderRadius:"6px",padding:"3px 10px",fontSize:"12px",cursor:"pointer",color:"#64748b"}}>
+                            ✕ Cancel
+                          </button>
+                        )}
+                      </Box>
+
+                      {/* Type selector */}
+                      <Typography sx={{fontSize:"11px",fontWeight:600,color:"#64748b",mb:"5px",letterSpacing:"0.5px",textTransform:"uppercase"}}>Type</Typography>
+                      <select style={{...S.inp}} value={eType} disabled={!!eEditId}
+                        onChange={e=>{setEType(e.target.value);setESkill("");setESkillPts("");setEActType("");setEActDesc("");setEActPts("");setEAchName("");setEAchPts("");}}>
+                        <option value="">— Select —</option>
+                        <option value="skill">🎯 Skill Level</option>
+                        <option value="activity">🏃 Activity</option>
+                        <option value="achievement">🏆 Achievement</option>
                       </select>
-                      <button style={S.btn} onClick={setSkill}>Save Skill</button>
-                      {/* Show current skill as a deletable item like achievements */}
-                      {eData?.skill && (
-                        <Box sx={{display:"flex",justifyContent:"space-between",alignItems:"center",
-                          background:"#f8fafc",borderRadius:"8px",p:"8px 12px",mt:1.5,
-                          border:"1px solid #e2e8f0"}}>
-                          <Box>
-                            <Typography sx={{fontSize:"13px",fontWeight:600,color:"#1e293b"}}>
-                              {eData.skill.skill_level}
-                            </Typography>
-                            <Typography sx={{fontSize:"11px",color:"#64748b"}}>
-                              Current skill level
-                            </Typography>
-                          </Box>
-                          <span style={{background:"#ede9fe",color:"#7c3aed",padding:"3px 12px",
-                            borderRadius:"999px",fontSize:"13px",fontWeight:700}}>
-                            {eData.skill.skill_score} pts
-                          </span>
-                        </Box>
-                      )}
-                      {!eData?.skill && (
-                        <Box sx={{background:"#fef9f0",border:"1px solid #fed7aa",borderRadius:"8px",
-                          p:"8px 14px",mt:1.5,fontSize:"13px",color:"#92400e"}}>
-                          No skill level set yet
-                        </Box>
-                      )}
+
+                      {eType==="skill" && (<>
+                        <Typography sx={{fontSize:"11px",fontWeight:600,color:"#64748b",mb:"5px",letterSpacing:"0.5px",textTransform:"uppercase"}}>Skill / Level Name</Typography>
+                        <input style={S.inp} placeholder="e.g. Python Expert" value={eSkill} onChange={e=>setESkill(e.target.value)}/>
+                        <Typography sx={{fontSize:"11px",fontWeight:600,color:"#64748b",mb:"5px",letterSpacing:"0.5px",textTransform:"uppercase"}}>Points</Typography>
+                        <input style={S.inp} type="number" placeholder="e.g. 75" value={eSkillPts} onChange={e=>setESkillPts(e.target.value)}/>
+                        <button style={S.btn} onClick={setSkill}>Save Skill</button>
+                      </>)}
+
+                      {eType==="activity" && (<>
+                        <Typography sx={{fontSize:"11px",fontWeight:600,color:"#64748b",mb:"5px",letterSpacing:"0.5px",textTransform:"uppercase"}}>Activity Type</Typography>
+                        <select style={S.inp} value={eActType}
+                          onChange={e=>{setEActType(e.target.value);if(!eActPts)setEActPts(String(ACT_PTS[e.target.value]||"")); }}>
+                          <option value="">Select activity</option>
+                          {Object.entries(ACT_PTS).map(([t,p])=>(
+                            <option key={t} value={t}>{t} — default {p} pts</option>
+                          ))}
+                        </select>
+                        <Typography sx={{fontSize:"11px",fontWeight:600,color:"#64748b",mb:"5px",letterSpacing:"0.5px",textTransform:"uppercase"}}>Description <span style={{fontWeight:400,textTransform:"none"}}>(optional)</span></Typography>
+                        <input style={S.inp} placeholder="e.g. Blood donation camp" value={eActDesc} onChange={e=>setEActDesc(e.target.value)}/>
+                        <Typography sx={{fontSize:"11px",fontWeight:600,color:"#64748b",mb:"5px",letterSpacing:"0.5px",textTransform:"uppercase"}}>Points</Typography>
+                        <input style={S.inp} type="number" placeholder="e.g. 20" value={eActPts} onChange={e=>setEActPts(e.target.value)}/>
+                        <button style={S.btn} onClick={addAct}>{eEditId?"Update Activity":"Add Activity"}</button>
+                      </>)}
+
+                      {eType==="achievement" && (<>
+                        <Typography sx={{fontSize:"11px",fontWeight:600,color:"#64748b",mb:"5px",letterSpacing:"0.5px",textTransform:"uppercase"}}>Achievement Name</Typography>
+                        <input style={S.inp} placeholder="e.g. State Level Chess Winner" value={eAchName} onChange={e=>setEAchName(e.target.value)}/>
+                        <Typography sx={{fontSize:"11px",fontWeight:600,color:"#64748b",mb:"5px",letterSpacing:"0.5px",textTransform:"uppercase"}}>Points</Typography>
+                        <input style={S.inp} type="number" placeholder="e.g. 30" value={eAchPts} onChange={e=>setEAchPts(e.target.value)}/>
+                        <button style={S.btn} onClick={addAch}>{eEditId?"Update Achievement":"Add Achievement"}</button>
+                      </>)}
                     </Box>
 
-                    {/* Activity */}
-                    <Box sx={{...S.card,mb:3}}>
-                      <Typography sx={{fontWeight:700,fontSize:"15px",mb:2}}>🏃 Add Activity</Typography>
-                      <select style={S.inp} value={eActType} onChange={e=>setEActType(e.target.value)}>
-                        <option value="">Select Activity</option>
-                        {["Club (10)","Workshop (15)","NSS (20)","NCC (25)","Sports (15)","Leadership (20)","Volunteering (15)"].map(x=>{
-                          const t=x.split(" (")[0];
-                          return <option key={t} value={t}>{x} pts</option>;
-                        })}
-                      </select>
-                      <input style={S.inp} placeholder="Description (optional)" value={eActDesc} onChange={e=>setEActDesc(e.target.value)}/>
-                      <button style={S.btn} onClick={addAct}>Add Activity</button>
-                      {(eData?.activities||[]).map(a=>(
-                        <Box key={a.id} sx={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#f8fafc",borderRadius:"8px",p:"8px 12px",mt:1}}>
-                          <Box>
-                            <Typography sx={{fontSize:"13px",fontWeight:500}}>{a.activity_type}</Typography>
-                            {a.description&&<Typography sx={{fontSize:"11px",color:"#64748b"}}>{a.description}</Typography>}
-                          </Box>
-                          <Box sx={{display:"flex",alignItems:"center",gap:1}}>
-                            <span style={{background:"#dbeafe",color:"#2563eb",padding:"2px 8px",borderRadius:"999px",fontSize:"12px",fontWeight:600}}>{a.points} pts</span>
-                            <IconButton size="small" sx={{color:"#ef4444"}} onClick={()=>delAct(a.id)}><DeleteIcon fontSize="small"/></IconButton>
-                          </Box>
-                        </Box>
-                      ))}
-                    </Box>
-
-                    {/* Achievement */}
-                    <Box sx={{...S.card,mb:3}}>
-                      <Typography sx={{fontWeight:700,fontSize:"15px",mb:2}}>🏆 Add Achievement</Typography>
-                      <input style={S.inp} placeholder="Achievement Name" value={eAchName} onChange={e=>setEAchName(e.target.value)}/>
-                      <input style={S.inp} type="number" placeholder="Points (e.g. 20)" value={eAchPts} onChange={e=>setEAchPts(e.target.value)}/>
-                      <button style={S.btn} onClick={addAch}>Add Achievement</button>
-                      {(eData?.achievements||[]).map(a=>(
-                        <Box key={a.id} sx={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#f8fafc",borderRadius:"8px",p:"8px 12px",mt:1}}>
-                          <Typography sx={{fontSize:"13px",fontWeight:500}}>{a.achievement_name}</Typography>
-                          <Box sx={{display:"flex",alignItems:"center",gap:1}}>
-                            <span style={{background:"#fef3c7",color:"#d97706",padding:"2px 8px",borderRadius:"999px",fontSize:"12px",fontWeight:600}}>{a.points} pts</span>
-                            <IconButton size="small" sx={{color:"#ef4444"}} onClick={()=>delAch(a.id)}><DeleteIcon fontSize="small"/></IconButton>
-                          </Box>
-                        </Box>
-                      ))}
-                    </Box>
-                  </Box>
-
-                  {/* Score card */}
-                  {eScore && (
-                    <Box sx={{flex:"0 0 300px"}}>
-                      <Box sx={{...S.card,border:`3px solid ${bandColor(eScore.band)}`,position:"sticky",top:"80px"}}>
-                        <Typography sx={{fontWeight:700,fontSize:"15px",mb:2,textAlign:"center"}}>📊 Efficiency Score</Typography>
-                        <Box sx={{textAlign:"center",mb:3}}>
-                          <Typography sx={{fontSize:"60px",fontWeight:800,color:bandColor(eScore.band),lineHeight:1}}>{eScore.finalScore}</Typography>
-                          <span style={{display:"inline-block",marginTop:"8px",padding:"4px 18px",borderRadius:"999px",fontWeight:700,fontSize:"14px",
+                    {/* Score card sticky below form */}
+                    {eScore && (
+                      <Box sx={{...S.card,border:`3px solid ${bandColor(eScore.band)}`}}>
+                        <Typography sx={{fontWeight:700,fontSize:"14px",mb:2,textAlign:"center"}}>📊 Efficiency Score</Typography>
+                        <Box sx={{textAlign:"center",mb:2}}>
+                          <Typography sx={{fontSize:"52px",fontWeight:800,color:bandColor(eScore.band),lineHeight:1}}>{eScore.finalScore}</Typography>
+                          <span style={{display:"inline-block",marginTop:"6px",padding:"3px 16px",borderRadius:"999px",fontWeight:700,fontSize:"13px",
                             background:bandColor(eScore.band)+"22",color:bandColor(eScore.band),border:`1px solid ${bandColor(eScore.band)}`}}>
                             {eScore.band}
                           </span>
                         </Box>
                         {[
-                          {l:"Skills (30%)",      v:eScore.skillScore,       c:"#7c3aed"},
-                          {l:"Achievements (20%)",v:eScore.achievementScore, c:"#d97706"},
-                          {l:"Activities (20%)",  v:eScore.activityScore,    c:"#16a34a"},
-                          {l:"CGPA (30%)",         v:eScore.cgpaScore,        c:"#2563eb"},
-                        ].map(({l,v,c})=>(
-                          <Box key={l} sx={{mb:1.5}}>
-                            <Box sx={{display:"flex",justifyContent:"space-between",mb:0.5}}>
-                              <Typography sx={{fontSize:"12px",color:"#64748b"}}>{l}</Typography>
-                              <Typography sx={{fontSize:"12px",fontWeight:600,color:c}}>{v}/100</Typography>
+                          {label:"Skills (30%)",       val:eScore.skillScore,       color:"#7c3aed"},
+                          {label:"Achievements (20%)", val:eScore.achievementScore, color:"#d97706"},
+                          {label:"Activities (20%)",   val:eScore.activityScore,    color:"#2563eb"},
+                          {label:"CGPA (30%)",         val:eScore.cgpaScore,        color:"#0891b2"},
+                        ].map(({label,val,color})=>(
+                          <Box key={label} sx={{mb:1.5}}>
+                            <Box sx={{display:"flex",justifyContent:"space-between",mb:"3px"}}>
+                              <Typography sx={{fontSize:"11px",color:"#64748b"}}>{label}</Typography>
+                              <Typography sx={{fontSize:"11px",fontWeight:700,color}}>{val}/100</Typography>
                             </Box>
-                            <Box sx={{height:"6px",background:"#f1f5f9",borderRadius:"3px",overflow:"hidden"}}>
-                              <Box sx={{height:"100%",width:`${v}%`,background:c,borderRadius:"3px",transition:"width 0.8s ease"}}/>
+                            <Box sx={{height:"5px",background:"#f1f5f9",borderRadius:"3px",overflow:"hidden"}}>
+                              <Box sx={{height:"100%",width:`${val}%`,background:color,borderRadius:"3px"}}/>
                             </Box>
                           </Box>
                         ))}
-                        <Box sx={{mt:2,pt:2,borderTop:"1px solid #f1f5f9",textAlign:"center"}}>
-                          <Typography sx={{fontSize:"12px",color:"#64748b"}}>CGPA: <strong>{eScore.cgpa}</strong></Typography>
-                          <Typography sx={{fontSize:"11px",color:"#94a3b8",mt:0.3}}>All peer-normalised</Typography>
+                        <Box sx={{mt:1.5,pt:1.5,borderTop:"1px solid #f1f5f9",display:"flex",justifyContent:"space-between"}}>
+                          <Typography sx={{fontSize:"12px",color:"#64748b"}}>CGPA</Typography>
+                          <Typography sx={{fontWeight:700,fontSize:"16px",color:"#0891b2"}}>{eScore.cgpa}</Typography>
                         </Box>
                       </Box>
+                    )}
+                  </Box>
+
+                  {/* RIGHT — entries list (like subjects table) */}
+                  <Box sx={{flex:"1 1 400px"}}>
+                    <Typography variant="h6" sx={{fontWeight:700,mb:2,fontSize:"15px"}}>
+                      Entries ({(!!eData?.skill?1:0) + (eData?.activities||[]).length + (eData?.achievements||[]).length})
+                    </Typography>
+
+                    <Box sx={{...S.card,p:0,overflow:"hidden"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse"}}>
+                        <thead>
+                          <tr style={{background:"#1e293b",color:"#fff"}}>
+                            {["#","Type","Name / Description","Points","Actions"].map(h=>(
+                              <th key={h} style={{...S.th,color:"#94a3b8",padding:"10px 14px"}}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {/* Skill row */}
+                          {eData?.skill && (
+                            <tr style={{borderBottom:"1px solid #f1f5f9"}}
+                              onMouseEnter={ev=>ev.currentTarget.style.background="#f5f3ff"}
+                              onMouseLeave={ev=>ev.currentTarget.style.background="transparent"}>
+                              <td style={{...S.td,color:"#94a3b8",padding:"10px 14px"}}>1</td>
+                              <td style={{...S.td,padding:"10px 14px"}}>
+                                <span style={{background:"#ede9fe",color:"#7c3aed",padding:"3px 10px",borderRadius:"999px",fontSize:"11px",fontWeight:700}}>🎯 Skill</span>
+                              </td>
+                              <td style={{...S.td,fontWeight:600,padding:"10px 14px"}}>{eData.skill.skill_level}</td>
+                              <td style={{...S.td,padding:"10px 14px"}}>
+                                <span style={{background:"#ede9fe",color:"#7c3aed",padding:"2px 10px",borderRadius:"999px",fontSize:"12px",fontWeight:700}}>{eData.skill.skill_score} pts</span>
+                              </td>
+                              <td style={{...S.td,padding:"10px 14px"}}>
+                                <IconButton size="small" sx={{color:"#f59e0b",mr:0.5}} onClick={()=>{
+                                  setEType("skill");setESkill(eData.skill.skill_level);setESkillPts(String(eData.skill.skill_score));setEEditId("skill");
+                                }}><EditIcon fontSize="small"/></IconButton>
+                              </td>
+                            </tr>
+                          )}
+                          {/* Activity rows */}
+                          {(eData?.activities||[]).map((a,idx)=>(
+                            <tr key={a.id} style={{borderBottom:"1px solid #f1f5f9"}}
+                              onMouseEnter={ev=>ev.currentTarget.style.background="#eff6ff"}
+                              onMouseLeave={ev=>ev.currentTarget.style.background="transparent"}>
+                              <td style={{...S.td,color:"#94a3b8",padding:"10px 14px"}}>{(eData?.skill?2:1)+idx}</td>
+                              <td style={{...S.td,padding:"10px 14px"}}>
+                                <span style={{background:"#dbeafe",color:"#2563eb",padding:"3px 10px",borderRadius:"999px",fontSize:"11px",fontWeight:700}}>🏃 Activity</span>
+                              </td>
+                              <td style={{...S.td,padding:"10px 14px"}}>
+                                <Typography sx={{fontSize:"13px",fontWeight:600}}>{a.activity_type}</Typography>
+                                {a.description&&<Typography sx={{fontSize:"11px",color:"#64748b"}}>{a.description}</Typography>}
+                              </td>
+                              <td style={{...S.td,padding:"10px 14px"}}>
+                                <span style={{background:"#dbeafe",color:"#2563eb",padding:"2px 10px",borderRadius:"999px",fontSize:"12px",fontWeight:700}}>{a.points} pts</span>
+                              </td>
+                              <td style={{...S.td,padding:"10px 14px"}}>
+                                <IconButton size="small" sx={{color:"#f59e0b",mr:0.5}} onClick={()=>{
+                                  setEType("activity");setEActType(a.activity_type);setEActDesc(a.description||"");setEActPts(String(a.points));setEEditId(a.id);
+                                }}><EditIcon fontSize="small"/></IconButton>
+                                <IconButton size="small" sx={{color:"#ef4444"}} onClick={()=>delAct(a.id)}><DeleteIcon fontSize="small"/></IconButton>
+                              </td>
+                            </tr>
+                          ))}
+                          {/* Achievement rows */}
+                          {(eData?.achievements||[]).map((a,idx)=>(
+                            <tr key={a.id} style={{borderBottom:"1px solid #f1f5f9"}}
+                              onMouseEnter={ev=>ev.currentTarget.style.background="#fffbeb"}
+                              onMouseLeave={ev=>ev.currentTarget.style.background="transparent"}>
+                              <td style={{...S.td,color:"#94a3b8",padding:"10px 14px"}}>{(eData?.skill?2:1)+(eData?.activities||[]).length+idx}</td>
+                              <td style={{...S.td,padding:"10px 14px"}}>
+                                <span style={{background:"#fef3c7",color:"#d97706",padding:"3px 10px",borderRadius:"999px",fontSize:"11px",fontWeight:700}}>🏆 Achievement</span>
+                              </td>
+                              <td style={{...S.td,fontWeight:600,padding:"10px 14px"}}>{a.achievement_name}</td>
+                              <td style={{...S.td,padding:"10px 14px"}}>
+                                <span style={{background:"#fef3c7",color:"#d97706",padding:"2px 10px",borderRadius:"999px",fontSize:"12px",fontWeight:700}}>{a.points} pts</span>
+                              </td>
+                              <td style={{...S.td,padding:"10px 14px"}}>
+                                <IconButton size="small" sx={{color:"#f59e0b",mr:0.5}} onClick={()=>{
+                                  setEType("achievement");setEAchName(a.achievement_name);setEAchPts(String(a.points));setEEditId(a.id);
+                                }}><EditIcon fontSize="small"/></IconButton>
+                                <IconButton size="small" sx={{color:"#ef4444"}} onClick={()=>delAch(a.id)}><DeleteIcon fontSize="small"/></IconButton>
+                              </td>
+                            </tr>
+                          ))}
+                          {!eData?.skill && (eData?.activities||[]).length===0 && (eData?.achievements||[]).length===0 && (
+                            <tr><td colSpan={5} style={{...S.td,textAlign:"center",color:"#94a3b8",padding:"32px",fontSize:"13px"}}>
+                              No entries yet — use the form to add skill, activities or achievements
+                            </td></tr>
+                          )}
+                        </tbody>
+                      </table>
                     </Box>
-                  )}
+                  </Box>
+
                 </Box>
               )}
             </Box>
           )}
-
           {/* ══════════════════ ANNOUNCEMENTS — FIX #2: delete */}
           {tab==="Announcements" && (
             <Box>

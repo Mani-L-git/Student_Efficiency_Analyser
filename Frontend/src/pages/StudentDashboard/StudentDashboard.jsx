@@ -475,6 +475,9 @@ function StudentDashboard() {
                 { label:"CGPA",         weight:"30%", color:"#38bdf8", dept: effScore.deptPercentile?.cgpa,         all: effScore.allPercentile?.cgpa         },
               ];
 
+              /* Attendance info row — separate, no weight in score */
+              const attPct = overallAttendance ? parseFloat(overallAttendance) : null;
+
               return (
                 <div style={{
                   background:"linear-gradient(135deg,rgba(15,23,42,0.95),rgba(30,41,59,0.9))",
@@ -533,11 +536,10 @@ function StudentDashboard() {
                         background:`${bc}22`, color:bc, border:`1px solid ${bc}55`,
                       }}>{effScore.band}</div>
 
-                      {/* CGPA — out of 10 */}
+                      {/* CGPA */}
                       <div style={{ marginTop:"12px", background:"rgba(56,189,248,0.08)", border:"1px solid rgba(56,189,248,0.2)", borderRadius:"10px", padding:"10px 16px" }}>
                         <div style={{ fontSize:"10px", color:"#64748b", marginBottom:"2px" }}>CGPA</div>
                         <div style={{ fontSize:"26px", fontWeight:800, color:"#38bdf8", lineHeight:1 }}>{effScore.cgpa}</div>
-                        <div style={{ fontSize:"10px", color:"#475569", marginTop:"2px" }}>out of 10</div>
                       </div>
 
                       {/* Overall standing pills */}
@@ -605,6 +607,35 @@ function StudentDashboard() {
                           </div>
                         );
                       })}
+
+                      {/* Attendance — info row, no weight in score */}
+                      {attPct !== null && (
+                        <div style={{
+                          background:"rgba(255,255,255,0.03)",
+                          border:`1px solid ${attPct>=75?"rgba(52,211,153,0.3)":"rgba(248,113,113,0.3)"}`,
+                          borderRadius:"12px", padding:"14px 16px", marginBottom:"10px",
+                        }}>
+                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"8px" }}>
+                            <span style={{ fontSize:"14px", color:"#e2e8f0", fontWeight:700 }}>
+                              Attendance
+                              <span style={{ fontSize:"10px", color:"#475569", marginLeft:"8px", background:"rgba(255,255,255,0.07)", padding:"2px 8px", borderRadius:"999px" }}>info only</span>
+                            </span>
+                            <span style={{ fontSize:"18px", fontWeight:800, color: attPct>=75?"#34d399":"#f87171" }}>
+                              {attPct}%
+                              <span style={{ fontSize:"11px", fontWeight:400, color:"#64748b", marginLeft:"4px" }}>{attPct>=75?"✓ Eligible":"⚠ Shortage"}</span>
+                            </span>
+                          </div>
+                          <div style={{ height:"8px", background:"rgba(255,255,255,0.07)", borderRadius:"4px", overflow:"hidden" }}>
+                            <div style={{ height:"100%", width:`${Math.min(attPct,100)}%`,
+                              background:attPct>=75?"linear-gradient(90deg,#34d39988,#34d399)":"linear-gradient(90deg,#f8717188,#f87171)",
+                              borderRadius:"4px", transition:"width 1.2s ease" }}/>
+                          </div>
+                          <div style={{ marginTop:"8px", fontSize:"11px", color:"#64748b" }}>
+                            Overall attendance across all semesters — not included in efficiency score
+                          </div>
+                        </div>
+                      )}
+
                     </div>
 
                   </div>

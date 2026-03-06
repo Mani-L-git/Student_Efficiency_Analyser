@@ -435,8 +435,9 @@ app.get("/subjects", verifyToken, async (req, res) => {
    ADD SUBJECT (admin only)
 ==================================================== */
 app.post("/add-subject", verifyToken, verifyAdmin, async (req, res) => {
-  const { subject_name, credits } = req.body;
+  const { subject_name, credits, semester } = req.body;
   if (!subject_name || !credits) return res.status(400).json({ message: "Subject name and credits required" });
+  const sem = semester || "Sem 1";
   const department = req.user.department;
   if (!department) return res.status(403).json({ message: "Admin has no department assigned" });
   try {
@@ -446,8 +447,8 @@ app.post("/add-subject", verifyToken, verifyAdmin, async (req, res) => {
     );
     if (existing.length > 0) return res.status(400).json({ message: "Subject already exists in your department" });
     await pool.query(
-      "INSERT INTO subjects (subject_name, department, credits) VALUES (?, ?, ?)",
-      [subject_name, department, credits]
+      "INSERT INTO subjects (subject_name, department, credits, semester) VALUES (?, ?, ?, ?)",
+      [subject_name, department, credits, sem]
     );
     res.json({ message: `Subject added to ${department} department` });
   } catch (error) {
@@ -624,15 +625,16 @@ app.get("/student-marks/:id", verifyToken, async (req, res) => {
 app.get("/student-attendance/:id", verifyToken, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT a.*, s.subject_name
+      `SELECT a.id, a.student_id, a.semester,
+              a.present_days, a.total_days, a.attendance_percentage
        FROM attendance a
-       JOIN subjects s ON a.subject_id = s.id
        WHERE a.student_id = ?
-       ORDER BY a.semester, s.subject_name`,
+       ORDER BY a.semester`,
       [req.params.id]
     );
     res.json(rows);
   } catch (error) {
+    console.error("student-attendance error:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -642,9 +644,9 @@ app.get("/student-attendance/:id", verifyToken, async (req, res) => {
    Calculates percentage from present_days / total_days
 ==================================================== */
 app.post("/add-attendance", verifyToken, verifyAdmin, async (req, res) => {
-  const { student_id, subject_id, semester, present_days, total_days } = req.body;
-  if (!student_id || !subject_id || !semester || present_days === undefined || !total_days)
-    return res.status(400).json({ message: "All fields required" });
+  const { student_id, semester, present_days, total_days } = req.body;
+  if (!student_id || !semester || present_days === undefined || !total_days)
+    return res.status(400).json({ message: "student_id, semester, present_days, total_days required" });
 
   const p = Number(present_days), t = Number(total_days);
   if (p < 0 || t <= 0)  return res.status(400).json({ message: "Invalid days values" });
@@ -653,21 +655,21 @@ app.post("/add-attendance", verifyToken, verifyAdmin, async (req, res) => {
   const attendance_percentage = parseFloat(((p / t) * 100).toFixed(2));
 
   try {
-    // UPSERT: update if record already exists for same student+subject+semester
+    // UPSERT: update if record already exists for same student+semester
     await pool.query(
       `INSERT INTO attendance
-         (student_id, subject_id, semester, present_days, total_days, attendance_percentage)
-       VALUES (?, ?, ?, ?, ?, ?)
+         (student_id, semester, present_days, total_days, attendance_percentage)
+       VALUES (?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          present_days = VALUES(present_days),
          total_days   = VALUES(total_days),
          attendance_percentage = VALUES(attendance_percentage)`,
-      [student_id, subject_id, semester, p, t, attendance_percentage]
+      [student_id, semester, p, t, attendance_percentage]
     );
     res.json({ message: "Attendance saved", attendance_percentage });
   } catch (error) {
     console.error("Add Attendance Error:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Server error", detail: error.message });
   }
 });
 
@@ -678,9 +680,10 @@ app.get("/attendance-list", verifyToken, verifyAdmin, async (req, res) => {
   try {
     let rows;
     const baseQuery = `
-      SELECT a.*, s.subject_name, u.name as student_name, u.rollno
+      SELECT a.id, a.student_id, a.semester,
+             a.present_days, a.total_days, a.attendance_percentage,
+             u.name as student_name, u.rollno, u.department
       FROM attendance a
-      JOIN subjects s ON a.subject_id = s.id
       JOIN users u ON a.student_id = u.id
       ORDER BY a.semester, u.name
     `;
@@ -694,208 +697,479 @@ app.get("/attendance-list", verifyToken, verifyAdmin, async (req, res) => {
     }
     res.json(rows);
   } catch (error) {
+    console.error("attendance-list error:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-
 /* ====================================================
-   EFFICIENCY SCORE — ADD TO server.js
-   Paste these routes BEFORE app.listen(5000, ...)
+   FIX #1: EFFICIENCY SCORE — Peer-normalized formula
+   SkillScore   = (studentSkills / maxSkillsAmongStudents) × 100
+   AchievScore  = (studentAch   / maxAchAmongStudents)    × 100
+   ActivityScore= (studentAct   / maxActAmongStudents)    × 100
+   CGPAScore    = (cgpa / 10) × 100
 ==================================================== */
-
-/* ── Activity type points map ── */
 const ACTIVITY_POINTS = {
   Club: 10, Workshop: 15, NSS: 20, NCC: 25,
   Sports: 15, Leadership: 20, Volunteering: 15,
 };
-const MAX_ACTIVITY_POINTS = 100;
-const MAX_ACHIEVEMENT_POINTS = 100;
 
-/* ====================================================
-   SET STUDENT SKILL LEVEL (Admin)
-==================================================== */
-app.post("/admin/student-skill", verifyToken, verifyAdmin, async (req, res) => {
-  const { student_id, skill_level } = req.body;
-  const validLevels = { Beginner: 25, Intermediate: 50, Advanced: 75, Expert: 100 };
-  if (!student_id || !skill_level || !validLevels[skill_level])
-    return res.status(400).json({ message: "student_id and valid skill_level required (Beginner/Intermediate/Advanced/Expert)" });
-  const skill_score = validLevels[skill_level];
-  try {
-    await pool.query(
-      `INSERT INTO student_skills (student_id, skill_level, skill_score)
-       VALUES (?, ?, ?)
-       ON DUPLICATE KEY UPDATE skill_level = VALUES(skill_level), skill_score = VALUES(skill_score)`,
-      [student_id, skill_level, skill_score]
-    );
-    res.json({ message: "Skill level saved", skill_score });
-  } catch (error) {
-    console.error("Skill error:", error);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-/* ====================================================
-   ADD STUDENT ACTIVITY (Admin)
-==================================================== */
-app.post("/admin/student-activity", verifyToken, verifyAdmin, async (req, res) => {
-  const { student_id, activity_type, description } = req.body;
-  if (!student_id || !activity_type || !ACTIVITY_POINTS[activity_type])
-    return res.status(400).json({ message: "student_id and valid activity_type required" });
-  const points = ACTIVITY_POINTS[activity_type];
-  try {
-    await pool.query(
-      `INSERT INTO student_activities (student_id, activity_type, points, description, added_by)
-       VALUES (?, ?, ?, ?, ?)`,
-      [student_id, activity_type, points, description || "", req.user.id]
-    );
-    res.json({ message: `Activity '${activity_type}' added (${points} pts)`, points });
-  } catch (error) {
-    console.error("Activity error:", error);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-/* ====================================================
-   DELETE STUDENT ACTIVITY (Admin)
-==================================================== */
-app.delete("/admin/student-activity/:id", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    await pool.query("DELETE FROM student_activities WHERE id = ?", [req.params.id]);
-    res.json({ message: "Activity deleted" });
-  } catch (error) {
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-/* ====================================================
-   ADD STUDENT ACHIEVEMENT (Admin)
-==================================================== */
-app.post("/admin/student-achievement", verifyToken, verifyAdmin, async (req, res) => {
-  const { student_id, achievement_name, points } = req.body;
-  if (!student_id || !achievement_name || points === undefined)
-    return res.status(400).json({ message: "All fields required" });
-  try {
-    await pool.query(
-      `INSERT INTO student_achievements (student_id, achievement_name, points)
-       VALUES (?, ?, ?)`,
-      [student_id, achievement_name, Number(points)]
-    );
-    res.json({ message: "Achievement added" });
-  } catch (error) {
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-/* ====================================================
-   DELETE STUDENT ACHIEVEMENT (Admin)
-==================================================== */
-app.delete("/admin/student-achievement/:id", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    await pool.query("DELETE FROM student_achievements WHERE id = ?", [req.params.id]);
-    res.json({ message: "Achievement deleted" });
-  } catch (error) {
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-/* ====================================================
-   GET STUDENT SKILLS / ACTIVITIES / ACHIEVEMENTS (Admin)
-==================================================== */
-app.get("/admin/student-efficiency-data/:studentId", verifyToken, verifyAdmin, async (req, res) => {
-  const { studentId } = req.params;
-  try {
-    const [skillRows]       = await pool.query("SELECT * FROM student_skills       WHERE student_id = ?", [studentId]);
-    const [activityRows]    = await pool.query("SELECT * FROM student_activities   WHERE student_id = ? ORDER BY created_at DESC", [studentId]);
-    const [achievementRows] = await pool.query("SELECT * FROM student_achievements WHERE student_id = ? ORDER BY created_at DESC", [studentId]);
-    res.json({
-      skill:        skillRows[0] || null,
-      activities:   activityRows,
-      achievements: achievementRows,
-    });
-  } catch (error) {
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-/* ====================================================
-   CALCULATE EFFICIENCY SCORE (Admin or Student — own)
-==================================================== */
 app.get("/efficiency/:studentId", verifyToken, async (req, res) => {
   const { studentId } = req.params;
-
-  // Students can only fetch their own score
   if (req.user.role === "student" && String(req.user.id) !== String(studentId))
     return res.status(403).json({ message: "Access denied" });
 
   try {
-    /* 1. Skill score */
-    const [skillRows] = await pool.query(
-      "SELECT skill_score FROM student_skills WHERE student_id = ?",
-      [studentId]
-    );
-    const skillScore = skillRows.length > 0 ? Number(skillRows[0].skill_score) : 0;
+    /* ── Get student's department ── */
+    const [stuRows] = await pool.query("SELECT department FROM users WHERE id = ?", [studentId]);
+    const myDept    = stuRows[0]?.department || "";
 
-    /* 2. Achievement score */
-    const [achRows] = await pool.query(
-      "SELECT SUM(points) as total FROM student_achievements WHERE student_id = ?",
-      [studentId]
-    );
-    const totalAchPoints = Number(achRows[0]?.total || 0);
-    const achievementScore = Math.min((totalAchPoints / MAX_ACHIEVEMENT_POINTS) * 100, 100);
+    /* ── All students list for percentile ── */
+    const [allStudents] = await pool.query("SELECT id, department FROM users WHERE role='student'");
+    const deptStudents  = allStudents.filter(s => s.department === myDept);
+    const allIds        = allStudents.map(s => s.id);
+    const deptIds       = deptStudents.map(s => s.id);
 
-    /* 3. Activity score */
-    const [actRows] = await pool.query(
-      "SELECT SUM(points) as total FROM student_activities WHERE student_id = ?",
-      [studentId]
-    );
-    const totalActPoints = Number(actRows[0]?.total || 0);
-    const activityScore = Math.min((totalActPoints / MAX_ACTIVITY_POINTS) * 100, 100);
+    /* ── Helper: what % of OTHER students does this student beat ── */
+    const percentile = (myVal, allVals) => {
+      if (allVals.length <= 1) return 100; // only one student = top of class
+      const others = allVals.filter(v => Number(v) !== Number(myVal));
+      if (others.length === 0) return 100;
+      const below = allVals.filter(v => Number(v) < Number(myVal)).length;
+      return Math.round((below / (allVals.length - 1)) * 100);
+    };
 
-    /* 4. SGPA score — use latest CGPA × 10 */
-    const [marksRows] = await pool.query(
-      `SELECT m.grade_points, s.credits FROM marks m
-       JOIN subjects s ON m.subject_id = s.id
-       WHERE m.student_id = ?`,
-      [studentId]
-    );
-    const allCredits  = marksRows.reduce((sum, r) => sum + Number(r.credits), 0);
-    const allWeighted = marksRows.reduce((sum, r) => sum + Number(r.grade_points) * Number(r.credits), 0);
-    const cgpa        = allCredits > 0 ? allWeighted / allCredits : 0;
-    const sgpaScore   = Math.min(cgpa * 10, 100);
+    /* ── 1. Skills ── */
+    const [allSkillRows] = await pool.query("SELECT student_id, skill_score FROM student_skills");
+    const skillMap       = Object.fromEntries(allSkillRows.map(r => [String(r.student_id), Number(r.skill_score)]));
+    const mySkillRaw     = skillMap[String(studentId)] || 0;
+    const maxSkill       = allSkillRows.length > 0 ? Math.max(...allSkillRows.map(r => Number(r.skill_score))) : 100;
+    const skillScore     = maxSkill > 0 ? (mySkillRaw / maxSkill) * 100 : 0;
+    const skillAllVals   = allIds.map(id => skillMap[String(id)] || 0);
+    const skillDeptVals  = deptIds.map(id => skillMap[String(id)] || 0);
 
-    /* 5. Final weighted score */
-    const finalScore = (
-      skillScore       * 0.30 +
-      achievementScore * 0.20 +
-      activityScore    * 0.20 +
-      sgpaScore        * 0.30
-    );
+    /* ── 2. Achievements ── */
+    const [allAchRows] = await pool.query("SELECT student_id, SUM(points) as total FROM student_achievements GROUP BY student_id");
+    const achMap       = Object.fromEntries(allAchRows.map(r => [String(r.student_id), Number(r.total || 0)]));
+    const myAchRaw     = achMap[String(studentId)] || 0;
+    const maxAch       = allAchRows.length > 0 ? Math.max(...allAchRows.map(r => Number(r.total || 0))) : 1;
+    const achievementScore = maxAch > 0 ? (myAchRaw / maxAch) * 100 : 0;
+    const achAllVals   = allIds.map(id => achMap[String(id)] || 0);
+    const achDeptVals  = deptIds.map(id => achMap[String(id)] || 0);
 
-    /* 6. Band */
-    const band =
-      finalScore >= 80 ? "Excellent" :
-      finalScore >= 60 ? "Good"      :
-      finalScore >= 40 ? "Needs Improvement" :
-                         "Weak";
+    /* ── 3. Activities ── */
+    const [allActRows] = await pool.query("SELECT student_id, SUM(points) as total FROM student_activities GROUP BY student_id");
+    const actMap       = Object.fromEntries(allActRows.map(r => [String(r.student_id), Number(r.total || 0)]));
+    const myActRaw     = actMap[String(studentId)] || 0;
+    const maxAct       = allActRows.length > 0 ? Math.max(...allActRows.map(r => Number(r.total || 0))) : 1;
+    const activityScore = maxAct > 0 ? (myActRaw / maxAct) * 100 : 0;
+    const actAllVals   = allIds.map(id => actMap[String(id)] || 0);
+    const actDeptVals  = deptIds.map(id => actMap[String(id)] || 0);
+
+    /* ── 4. CGPA ── */
+    const [marksAll] = await pool.query(
+      `SELECT m.student_id, m.grade_points, s.credits FROM marks m JOIN subjects s ON m.subject_id=s.id`
+    );
+    const cgpaMapRaw = {};
+    for (const r of marksAll) {
+      const key = String(r.student_id);
+      if (!cgpaMapRaw[key]) cgpaMapRaw[key] = { w: 0, c: 0 };
+      cgpaMapRaw[key].w += Number(r.grade_points) * Number(r.credits);
+      cgpaMapRaw[key].c += Number(r.credits);
+    }
+    const cgpaMap = cgpaMapRaw; // String-keyed
+    const myCgpaData  = cgpaMap[String(studentId)];
+    const cgpa        = myCgpaData && myCgpaData.c > 0 ? myCgpaData.w / myCgpaData.c : 0;
+    const cgpaScore   = Math.min((cgpa / 10) * 100, 100);
+    const cgpaAllVals  = allIds.map(id => { const d=cgpaMap[String(id)]; return d&&d.c>0?d.w/d.c:0; });
+    const cgpaDeptVals = deptIds.map(id => { const d=cgpaMap[String(id)]; return d&&d.c>0?d.w/d.c:0; });
+
+    /* ── 5. Final score + overall rank ── */
+    const finalScore = (skillScore*0.30)+(achievementScore*0.20)+(activityScore*0.20)+(cgpaScore*0.30);
+    const band = finalScore>=80?"Excellent":finalScore>=60?"Good":finalScore>=40?"Needs Improvement":"Weak";
+
+    /* Final scores for all students (for overall + dept rank) */
+    const calcFinal = (id) => {
+      const sid = String(id);
+      const sk = maxSkill>0?((skillMap[sid]||0)/maxSkill)*100:0;
+      const ac = maxAch>0?((achMap[sid]||0)/maxAch)*100:0;
+      const at = maxAct>0?((actMap[sid]||0)/maxAct)*100:0;
+      const cd = cgpaMap[sid]; const cg = cd&&cd.c>0?Math.min((cd.w/cd.c/10)*100,100):0;
+      return sk*0.30 + ac*0.20 + at*0.20 + cg*0.30;
+    };
+    const allFinalScores  = allIds.map(id => calcFinal(id));
+    const deptFinalScores = deptIds.map(id => calcFinal(id));
+
+    const overallRank = allFinalScores.filter(s => s > finalScore).length + 1;
+    const deptRank    = deptFinalScores.filter(s => s > finalScore).length + 1;
 
     res.json({
-      studentId,
+      studentId, department: myDept,
       skillScore:       Math.round(skillScore),
       achievementScore: Math.round(achievementScore),
       activityScore:    Math.round(activityScore),
-      sgpaScore:        Math.round(sgpaScore),
+      cgpaScore:        Math.round(cgpaScore),
       finalScore:       Math.round(finalScore * 10) / 10,
-      band,
-      cgpa:             cgpa.toFixed(2),
-      totalAchPoints,
-      totalActPoints,
+      band, cgpa: cgpa.toFixed(2),
+
+      /* Dept percentiles */
+      deptPercentile: {
+        skill:       percentile(mySkillRaw,  skillDeptVals),
+        achievement: percentile(myAchRaw,    achDeptVals),
+        activity:    percentile(myActRaw,    actDeptVals),
+        cgpa:        percentile(cgpa,        cgpaDeptVals),
+        overall:     percentile(finalScore,  deptFinalScores),
+      },
+      /* Overall percentiles */
+      allPercentile: {
+        skill:       percentile(mySkillRaw,  skillAllVals),
+        achievement: percentile(myAchRaw,    achAllVals),
+        activity:    percentile(myActRaw,    actAllVals),
+        cgpa:        percentile(cgpa,        cgpaAllVals),
+        overall:     percentile(finalScore,  allFinalScores),
+      },
+      /* Ranks */
+      deptRank, deptTotal: deptIds.length,
+      overallRank, overallTotal: allIds.length,
     });
   } catch (error) {
     console.error("Efficiency error:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
+
+/* ====================================================
+   FIX #1b: ALL students efficiency — for Admin dashboard table (#8)
+   & dept average — for SuperAdmin (#9)
+==================================================== */
+app.get("/admin/all-efficiency", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const [allStudents] = await pool.query("SELECT id, name, rollno, department FROM users WHERE role='student'");
+    let displayStudents = req.user.role === "superadmin"
+      ? allStudents
+      : allStudents.filter(s => s.department === req.user.department);
+
+    const [allSkills] = await pool.query("SELECT student_id, skill_score FROM student_skills");
+    const [allAch]    = await pool.query("SELECT student_id, SUM(points) as total FROM student_achievements GROUP BY student_id");
+    const [allAct]    = await pool.query("SELECT student_id, SUM(points) as total FROM student_activities GROUP BY student_id");
+    const maxSkill = allSkills.length > 0 ? Math.max(...allSkills.map(r => Number(r.skill_score))) : 100;
+    const maxAch   = allAch.length   > 0 ? Math.max(...allAch.map(r => Number(r.total || 0)))   : 1;
+    const maxAct   = allAct.length   > 0 ? Math.max(...allAct.map(r => Number(r.total || 0)))   : 1;
+    const skillMap = Object.fromEntries(allSkills.map(r => [String(r.student_id), Number(r.skill_score)]));
+    const achMap   = Object.fromEntries(allAch.map(r => [String(r.student_id), Number(r.total || 0)]));
+    const actMap   = Object.fromEntries(allAct.map(r => [String(r.student_id), Number(r.total || 0)]));
+
+    const [marksAll] = await pool.query(
+      `SELECT m.student_id, m.grade_points, s.credits FROM marks m JOIN subjects s ON m.subject_id=s.id`
+    );
+    const cgpaMap = {};
+    for (const r of marksAll) {
+      if (!cgpaMap[r.student_id]) cgpaMap[r.student_id] = { weighted: 0, credits: 0 };
+      cgpaMap[r.student_id].weighted += Number(r.grade_points) * Number(r.credits);
+      cgpaMap[r.student_id].credits  += Number(r.credits);
+    }
+
+    const calcScore = id => {
+      const sk = maxSkill>0?((skillMap[String(id)]||0)/maxSkill)*100:0;
+      const ac = maxAch>0?((achMap[String(id)]||0)/maxAch)*100:0;
+      const at = maxAct>0?((actMap[String(id)]||0)/maxAct)*100:0;
+      const cd = cgpaMap[id]; const cg = cd&&cd.credits>0?Math.min((cd.weighted/cd.credits/10)*100,100):0;
+      return { sk, ac, at, cg, final: sk*0.30+ac*0.20+at*0.20+cg*0.30 };
+    };
+
+    /* Pre-compute all scores for ranking */
+    const allScoreMap  = Object.fromEntries(allStudents.map(s => [s.id, calcScore(s.id).final]));
+
+    const results = displayStudents.map(s => {
+      const { sk, ac, at, cg, final } = calcScore(s.id);
+      const cd   = cgpaMap[s.id];
+      const cgpa = cd && cd.credits > 0 ? cd.weighted / cd.credits : 0;
+      const band = final>=80?"Excellent":final>=60?"Good":final>=40?"Needs Improvement":"Weak";
+
+      /* Dept students */
+      const deptStudentIds = allStudents.filter(x => x.department === s.department).map(x => x.id);
+
+      /* Overall rank & dept rank */
+      const overallRank = Object.values(allScoreMap).filter(v => v > final).length + 1;
+      const deptRank    = deptStudentIds.filter(id => (allScoreMap[id]||0) > final).length + 1;
+
+      /* Percentile helper */
+      const pct = (myVal, ids, map) => {
+        const vals = ids.map(id => map[String(id)]||0);
+        if (!vals.length) return 0;
+        return Math.round((vals.filter(v => v < myVal).length / vals.length) * 100);
+      };
+
+      return {
+        id: s.id, name: s.name, rollno: s.rollno, department: s.department,
+        skillScore: Math.round(sk), achievementScore: Math.round(ac),
+        activityScore: Math.round(at), cgpaScore: Math.round(cg),
+        finalScore: Math.round(final * 10) / 10,
+        cgpa: cgpa.toFixed(2), band,
+        overallRank, overallTotal: allStudents.length,
+        deptRank,    deptTotal: deptStudentIds.length,
+        deptPercentile: {
+          skill:   pct(skillMap[String(s.id)]||0, deptStudentIds, skillMap),
+          achievement: pct(achMap[String(s.id)]||0, deptStudentIds, achMap),
+          activity: pct(actMap[String(s.id)]||0, deptStudentIds, actMap),
+          overall:  Math.round((deptStudentIds.filter(id=>(allScoreMap[id]||0)<final).length/deptStudentIds.length)*100),
+        },
+        allPercentile: {
+          skill:   pct(skillMap[String(s.id)]||0, allStudents.map(x=>x.id), skillMap),
+          achievement: pct(achMap[String(s.id)]||0, allStudents.map(x=>x.id), achMap),
+          activity: pct(actMap[String(s.id)]||0, allStudents.map(x=>x.id), actMap),
+          overall:  Math.round((Object.values(allScoreMap).filter(v=>v<final).length/allStudents.length)*100),
+        },
+      };
+    });
+
+    /* Sort by finalScore descending */
+    results.sort((a, b) => b.finalScore - a.finalScore);
+    res.json(results);
+  } catch (err) {
+    console.error("All efficiency error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ====================================================
+   FIX #4: ROLL NO AUTOCOMPLETE SUGGESTIONS
+==================================================== */
+app.get("/students/search", verifyToken, verifyAdmin, async (req, res) => {
+  const { q } = req.query;
+  if (!q || q.trim().length < 2) return res.json([]);
+  try {
+    let rows;
+    if (req.user.role === "superadmin") {
+      [rows] = await pool.query(
+        "SELECT id, name, rollno FROM users WHERE role='student' AND rollno LIKE ? LIMIT 8",
+        [`${q.trim()}%`]
+      );
+    } else {
+      [rows] = await pool.query(
+        "SELECT id, name, rollno FROM users WHERE role='student' AND department=? AND rollno LIKE ? LIMIT 8",
+        [req.user.department, `${q.trim()}%`]
+      );
+    }
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ====================================================
+   FIX #5: SUBJECTS BY SEMESTER
+==================================================== */
+app.get("/subjects-by-sem", verifyToken, async (req, res) => {
+  try {
+    let rows;
+    if (req.user.role === "superadmin") {
+      [rows] = await pool.query("SELECT * FROM subjects ORDER BY semester, subject_name");
+    } else if (req.user.role === "admin") {
+      [rows] = await pool.query("SELECT * FROM subjects WHERE department=? ORDER BY semester, subject_name", [req.user.department]);
+    } else {
+      const [u] = await pool.query("SELECT department FROM users WHERE id=?", [req.user.id]);
+      [rows] = await pool.query("SELECT * FROM subjects WHERE department=? ORDER BY semester, subject_name", [u[0]?.department]);
+    }
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ====================================================
+   FIX #6: CHANGE PASSWORD
+==================================================== */
+app.put("/change-password", verifyToken, async (req, res) => {
+  const { current_password, new_password } = req.body;
+  if (!current_password || !new_password)
+    return res.status(400).json({ message: "Both fields required" });
+  if (new_password.length < 4)
+    return res.status(400).json({ message: "New password must be at least 4 characters" });
+  try {
+    const [rows] = await pool.query("SELECT password FROM users WHERE id=?", [req.user.id]);
+    if (rows.length === 0) return res.status(404).json({ message: "User not found" });
+    if (rows[0].password !== current_password)
+      return res.status(400).json({ message: "Current password is incorrect" });
+    await pool.query("UPDATE users SET password=? WHERE id=?", [new_password, req.user.id]);
+    res.json({ message: "Password changed successfully" });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ====================================================
+   FIX #9: AVG EFFICIENCY PER DEPARTMENT (SuperAdmin)
+==================================================== */
+app.get("/superadmin/dept-efficiency", verifyToken, verifySuperAdmin, async (req, res) => {
+  try {
+    const [students] = await pool.query("SELECT id, department FROM users WHERE role='student'");
+    const [allSkills] = await pool.query("SELECT student_id, skill_score FROM student_skills");
+    const [allAch]    = await pool.query("SELECT student_id, SUM(points) as total FROM student_achievements GROUP BY student_id");
+    const [allAct]    = await pool.query("SELECT student_id, SUM(points) as total FROM student_activities GROUP BY student_id");
+    const [marksAll]  = await pool.query(`SELECT m.student_id, m.grade_points, s.credits FROM marks m JOIN subjects s ON m.subject_id=s.id`);
+
+    const maxSkill = allSkills.length > 0 ? Math.max(...allSkills.map(r => Number(r.skill_score))) : 100;
+    const maxAch   = allAch.length > 0 ? Math.max(...allAch.map(r => Number(r.total || 0))) : 1;
+    const maxAct   = allAct.length > 0 ? Math.max(...allAct.map(r => Number(r.total || 0))) : 1;
+    const skillMap = Object.fromEntries(allSkills.map(r => [r.student_id, Number(r.skill_score)]));
+    const achMap   = Object.fromEntries(allAch.map(r => [r.student_id, Number(r.total || 0)]));
+    const actMap   = Object.fromEntries(allAct.map(r => [r.student_id, Number(r.total || 0)]));
+    const cgpaMap  = {};
+    for (const r of marksAll) {
+      if (!cgpaMap[r.student_id]) cgpaMap[r.student_id] = { w: 0, c: 0 };
+      cgpaMap[r.student_id].w += Number(r.grade_points) * Number(r.credits);
+      cgpaMap[r.student_id].c += Number(r.credits);
+    }
+
+    const deptMap = {};
+    for (const s of students) {
+      const dept = s.department;
+      if (!deptMap[dept]) deptMap[dept] = { total: 0, count: 0 };
+      const skillScore = maxSkill > 0 ? ((skillMap[s.id] || 0) / maxSkill) * 100 : 0;
+      const achScore   = maxAch   > 0 ? ((achMap[s.id]   || 0) / maxAch)   * 100 : 0;
+      const actScore   = maxAct   > 0 ? ((actMap[s.id]   || 0) / maxAct)   * 100 : 0;
+      const cd = cgpaMap[s.id];
+      const cgpa = cd && cd.c > 0 ? cd.w / cd.c : 0;
+      const cgpaScore = Math.min((cgpa / 10) * 100, 100);
+      const score = (skillScore * 0.30) + (achScore * 0.20) + (actScore * 0.20) + (cgpaScore * 0.30);
+      deptMap[dept].total += score;
+      deptMap[dept].count += 1;
+    }
+
+    const result = Object.entries(deptMap).map(([dept, { total, count }]) => ({
+      department: dept,
+      avgEfficiency: Math.round((total / count) * 10) / 10,
+      studentCount: count,
+    }));
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ====================================================
+   FIX #10: TOTAL MARKS ENTRIES COUNT
+   Count = 1 per student per semester (all subjects entered)
+==================================================== */
+app.get("/superadmin/marks-entries-count", verifyToken, verifySuperAdmin, async (req, res) => {
+  try {
+    // Count distinct (student_id, semester) pairs = 1 complete entry per student per sem
+    const [rows] = await pool.query(
+      `SELECT department, COUNT(DISTINCT CONCAT(student_id,'-',semester)) as count
+       FROM marks GROUP BY department`
+    );
+    const [[{total}]] = await pool.query(
+      `SELECT COUNT(DISTINCT CONCAT(student_id,'-',semester)) as total FROM marks`
+    );
+    res.json({ byDept: rows, total });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ====================================================
+   FIX: Skills / Activities / Achievements input (Admin)
+==================================================== */
+app.post("/admin/student-skill", verifyToken, verifyAdmin, async (req, res) => {
+  const { student_id, skill_level, skill_score } = req.body;
+  if (!student_id || !skill_level || skill_score === undefined)
+    return res.status(400).json({ message: "student_id, skill_level, skill_score required" });
+  const pts = Number(skill_score);
+  if (isNaN(pts) || pts < 0) return res.status(400).json({ message: "Invalid points" });
+  try {
+    await pool.query(
+      `INSERT INTO student_skills (student_id, skill_level, skill_score)
+       VALUES (?,?,?) ON DUPLICATE KEY UPDATE skill_level=VALUES(skill_level), skill_score=VALUES(skill_score)`,
+      [student_id, skill_level, pts]
+    );
+    res.json({ message: "Skill saved", skill_score: pts });
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
+});
+
+/* Edit activity */
+app.put("/admin/student-activity/:id", verifyToken, verifyAdmin, async (req, res) => {
+  const { activity_type, description, points } = req.body;
+  if (!activity_type || points === undefined) return res.status(400).json({ message: "activity_type and points required" });
+  try {
+    await pool.query(
+      `UPDATE student_activities SET activity_type=?, description=?, points=? WHERE id=?`,
+      [activity_type, description || "", Number(points), req.params.id]
+    );
+    res.json({ message: "Activity updated" });
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
+});
+
+app.post("/admin/student-activity", verifyToken, verifyAdmin, async (req, res) => {
+  const { student_id, activity_type, description, points } = req.body;
+  if (!student_id || !activity_type) return res.status(400).json({ message: "student_id and activity_type required" });
+  const pts = points !== undefined ? Number(points) : (ACTIVITY_POINTS[activity_type] || 10);
+  try {
+    await pool.query(
+      `INSERT INTO student_activities (student_id, activity_type, points, description, added_by)
+       VALUES (?,?,?,?,?)`,
+      [student_id, activity_type, pts, description || "", req.user.id]
+    );
+    res.json({ message: `Activity '${activity_type}' added (${pts} pts)`, points: pts });
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
+});
+
+app.delete("/admin/student-activity/:id", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    await pool.query("DELETE FROM student_activities WHERE id=?", [req.params.id]);
+    res.json({ message: "Deleted" });
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
+});
+
+/* Edit achievement */
+app.put("/admin/student-achievement/:id", verifyToken, verifyAdmin, async (req, res) => {
+  const { achievement_name, points } = req.body;
+  if (!achievement_name || points === undefined) return res.status(400).json({ message: "achievement_name and points required" });
+  try {
+    await pool.query(
+      `UPDATE student_achievements SET achievement_name=?, points=? WHERE id=?`,
+      [achievement_name, Number(points), req.params.id]
+    );
+    res.json({ message: "Achievement updated" });
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
+});
+
+app.post("/admin/student-achievement", verifyToken, verifyAdmin, async (req, res) => {
+  const { student_id, achievement_name, points } = req.body;
+  if (!student_id || !achievement_name || points === undefined)
+    return res.status(400).json({ message: "All fields required" });
+  try {
+    await pool.query(
+      `INSERT INTO student_achievements (student_id, achievement_name, points) VALUES (?,?,?)`,
+      [student_id, achievement_name, Number(points)]
+    );
+    res.json({ message: "Achievement added" });
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
+});
+
+app.delete("/admin/student-achievement/:id", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    await pool.query("DELETE FROM student_achievements WHERE id=?", [req.params.id]);
+    res.json({ message: "Deleted" });
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
+});
+
+app.get("/admin/student-efficiency-data/:studentId", verifyToken, verifyAdmin, async (req, res) => {
+  const { studentId } = req.params;
+  try {
+    const [skillRows]   = await pool.query("SELECT * FROM student_skills WHERE student_id=?", [studentId]);
+    const [actRows]     = await pool.query("SELECT * FROM student_activities WHERE student_id=? ORDER BY created_at DESC", [studentId]);
+    const [achRows]     = await pool.query("SELECT * FROM student_achievements WHERE student_id=? ORDER BY created_at DESC", [studentId]);
+    res.json({ skill: skillRows[0] || null, activities: actRows, achievements: achRows });
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
+});
+
+/* ====================================================
+   FIX: SQL ALTER for subjects.semester column (run once)
+   (subjects table needs a semester column for fix #5)
+   ALTER TABLE subjects ADD COLUMN IF NOT EXISTS semester VARCHAR(20) DEFAULT 'Sem 1';
+==================================================== */
+
 /* ====================================================
    START SERVER
 ==================================================== */
