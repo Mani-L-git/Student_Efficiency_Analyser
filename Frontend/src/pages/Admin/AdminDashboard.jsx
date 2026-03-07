@@ -157,6 +157,16 @@ export default function AdminDashboard() {
   const [tab,     setTab]     = useState("Dashboard");
   const [loading, setLoading] = useState(true);
 
+  /* Decode department from JWT */
+  const userDept = (() => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return "";
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      return payload.department || "";
+    } catch { return ""; }
+  })();
+
   /* core data */
   const [students,      setStudents]      = useState([]);
   const [subjects,      setSubjects]      = useState([]);
@@ -482,7 +492,15 @@ export default function AdminDashboard() {
 
         {/* AppBar */}
         <AppBar position="fixed" sx={{width:`calc(100% - ${drawerWidth}px)`,ml:`${drawerWidth}px`,background:"linear-gradient(90deg,#1e3c72,#2a5298)"}}>
-          <Toolbar><Typography variant="h6" noWrap sx={{fontWeight:700,fontFamily:"'Inter','Segoe UI',sans-serif"}}>{tab}</Typography></Toolbar>
+          <Toolbar>
+            <Typography variant="h6" noWrap sx={{fontWeight:700,fontFamily:"'Inter','Segoe UI',sans-serif"}}>{tab}</Typography>
+            {userDept && (
+              <span style={{marginLeft:"12px",background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.25)",
+                padding:"3px 12px",borderRadius:"999px",fontSize:"12px",fontWeight:600,letterSpacing:"0.3px"}}>
+                {userDept}
+              </span>
+            )}
+          </Toolbar>
         </AppBar>
 
         {/* Drawer */}
@@ -490,8 +508,12 @@ export default function AdminDashboard() {
           "& .MuiDrawer-paper":{width:drawerWidth,boxSizing:"border-box",
             background:"linear-gradient(180deg,#1e3c72,#2a5298)",color:"#fff",
             display:"flex",flexDirection:"column"}}}>
-          <Toolbar sx={{justifyContent:"center"}}>
-            <Typography variant="h6" sx={{fontWeight:700,color:"#fff"}}>SLEA Admin</Typography>
+          <Toolbar sx={{justifyContent:"center",flexDirection:"column",py:1.5}}>
+            <Typography variant="h6" sx={{fontWeight:700,color:"#fff",lineHeight:1.2}}>SLEA Admin</Typography>
+            {userDept && (
+              <Typography sx={{fontSize:"11px",color:"rgba(255,255,255,0.65)",fontWeight:500,letterSpacing:"0.5px",
+                textTransform:"uppercase",mt:"2px"}}>{userDept} Dept</Typography>
+            )}
           </Toolbar>
           <Divider sx={{borderColor:"rgba(255,255,255,0.15)"}}/>
           <List sx={{mt:1,flexGrow:1}}>
@@ -994,39 +1016,149 @@ export default function AdminDashboard() {
                       </>)}
                     </Box>
 
-                    {/* Score card sticky below form */}
-                    {eScore && (
-                      <Box sx={{...S.card,border:`3px solid ${bandColor(eScore.band)}`}}>
-                        <Typography sx={{fontWeight:700,fontSize:"14px",mb:2,textAlign:"center"}}>📊 Efficiency Score</Typography>
-                        <Box sx={{textAlign:"center",mb:2}}>
-                          <Typography sx={{fontSize:"52px",fontWeight:800,color:bandColor(eScore.band),lineHeight:1}}>{eScore.finalScore}</Typography>
-                          <span style={{display:"inline-block",marginTop:"6px",padding:"3px 16px",borderRadius:"999px",fontWeight:700,fontSize:"13px",
-                            background:bandColor(eScore.band)+"22",color:bandColor(eScore.band),border:`1px solid ${bandColor(eScore.band)}`}}>
-                            {eScore.band}
-                          </span>
-                        </Box>
-                        {[
-                          {label:"Skills (30%)",       val:eScore.skillScore,       color:"#7c3aed"},
-                          {label:"Achievements (20%)", val:eScore.achievementScore, color:"#d97706"},
-                          {label:"Activities (20%)",   val:eScore.activityScore,    color:"#2563eb"},
-                          {label:"CGPA (30%)",         val:eScore.cgpaScore,        color:"#0891b2"},
-                        ].map(({label,val,color})=>(
-                          <Box key={label} sx={{mb:1.5}}>
-                            <Box sx={{display:"flex",justifyContent:"space-between",mb:"3px"}}>
-                              <Typography sx={{fontSize:"11px",color:"#64748b"}}>{label}</Typography>
-                              <Typography sx={{fontSize:"11px",fontWeight:700,color}}>{val}/100</Typography>
-                            </Box>
-                            <Box sx={{height:"5px",background:"#f1f5f9",borderRadius:"3px",overflow:"hidden"}}>
-                              <Box sx={{height:"100%",width:`${val}%`,background:color,borderRadius:"3px"}}/>
+                    {/* Score card — peer comparison */}
+                    {eScore && (() => {
+                      /* ── CHANGE COLORS HERE ─────────────────────────────
+                         Top tier  (≥75%) : text / background / border
+                         Mid tier  (≥50%) : text / background / border
+                         Low tier  (<50%) : text / background / border      */
+                      const COLOR_TOP_TEXT   = "#059669";   /* emerald-600   */
+                      const COLOR_TOP_BG     = "#d1fae5";   /* emerald-100   */
+                      const COLOR_TOP_BORDER = "#6ee7b7";   /* emerald-300   */
+
+                      const COLOR_MID_TEXT   = "#7c3aed";   /* violet-600    */
+                      const COLOR_MID_BG     = "#ede9fe";   /* violet-100    */
+                      const COLOR_MID_BORDER = "#c4b5fd";   /* violet-300    */
+
+                      const COLOR_LOW_TEXT   = "#e11d48";   /* rose-600      */
+                      const COLOR_LOW_BG     = "#ffe4e6";   /* rose-100      */
+                      const COLOR_LOW_BORDER = "#fda4af";   /* rose-300      */
+
+                      /* DEPT badge colors (fixed, not percentile-based) */
+                      const COLOR_DEPT_TEXT   = "#0369a1";  /* sky-700       */
+                      const COLOR_DEPT_BG     = "#e0f2fe";  /* sky-100       */
+                      const COLOR_DEPT_BORDER = "#7dd3fc";  /* sky-300       */
+
+                      /* OVERALL badge colors */
+                      const COLOR_ALL_TEXT    = "#c2410c";  /* orange-700    */
+                      const COLOR_ALL_BG      = "#ffedd5";  /* orange-100    */
+                      const COLOR_ALL_BORDER  = "#fdba74";  /* orange-300    */
+
+                      /* DEPT RANK badge */
+                      const COLOR_DRANK_TEXT  = "#6d28d9";  /* violet-700    */
+                      const COLOR_DRANK_BG    = "#f5f3ff";  /* violet-50     */
+                      const COLOR_DRANK_BORDER= "#ddd6fe";  /* violet-200    */
+
+                      /* OVERALL RANK badge */
+                      const COLOR_ORANK_TEXT  = "#1d4ed8";  /* blue-700      */
+                      const COLOR_ORANK_BG    = "#eff6ff";  /* blue-50       */
+                      const COLOR_ORANK_BORDER= "#bfdbfe";  /* blue-200      */
+
+                      /* BAR colors */
+                      const COLOR_BAR_DEPT    = "#0ea5e9";  /* sky-500       */
+                      const COLOR_BAR_ALL     = "#f97316";  /* orange-500    */
+                      /* ─────────────────────────────────────────────────── */
+
+                      const pctColor = p => p>=75?COLOR_TOP_TEXT:p>=50?COLOR_MID_TEXT:COLOR_LOW_TEXT;
+                      const pctBg    = p => p>=75?COLOR_TOP_BG:p>=50?COLOR_MID_BG:COLOR_LOW_BG;
+                      const pctBorder= p => p>=75?COLOR_TOP_BORDER:p>=50?COLOR_MID_BORDER:COLOR_LOW_BORDER;
+                      const icon     = p => p>=90?"🏆":p>=75?"🥇":p>=50?"📈":"📉";
+                      const params = [
+                        { label:"Skills",       emoji:"🎯", dept:eScore.deptPercentile?.skill,       all:eScore.allPercentile?.skill       },
+                        { label:"Achievements", emoji:"🏆", dept:eScore.deptPercentile?.achievement, all:eScore.allPercentile?.achievement  },
+                        { label:"Activities",   emoji:"🏃", dept:eScore.deptPercentile?.activity,    all:eScore.allPercentile?.activity     },
+                        { label:"CGPA",         emoji:"📚", dept:eScore.deptPercentile?.cgpa,        all:eScore.allPercentile?.cgpa         },
+                      ];
+                      return (
+                        <Box sx={{...S.card,border:`2px solid ${bandColor(eScore.band)}22`}}>
+                          {/* Header — score + band + ranks */}
+                          <Box sx={{textAlign:"center",mb:2,pb:2,borderBottom:"1px solid #f1f5f9"}}>
+                            <Typography sx={{fontSize:"11px",fontWeight:700,color:"#64748b",letterSpacing:"0.5px",textTransform:"uppercase",mb:0.5}}>Overall Score</Typography>
+                            <Typography sx={{fontSize:"48px",fontWeight:800,color:bandColor(eScore.band),lineHeight:1}}>{eScore.finalScore}</Typography>
+                            <span style={{display:"inline-block",marginTop:"6px",padding:"3px 14px",borderRadius:"999px",fontWeight:700,fontSize:"12px",
+                              background:bandColor(eScore.band)+"22",color:bandColor(eScore.band),border:`1px solid ${bandColor(eScore.band)}`}}>
+                              {eScore.band}
+                            </span>
+                            {/* Rank badges */}
+                            <Box sx={{display:"flex",justifyContent:"center",gap:1.5,mt:1.5}}>
+                              <Box sx={{background:COLOR_DRANK_BG,border:`1px solid ${COLOR_DRANK_BORDER}`,borderRadius:"8px",px:1.5,py:0.5,textAlign:"center"}}>
+                                <Typography sx={{fontSize:"10px",color:COLOR_DRANK_TEXT,fontWeight:600}}>DEPT RANK</Typography>
+                                <Typography sx={{fontSize:"16px",fontWeight:800,color:COLOR_DRANK_TEXT,lineHeight:1.2}}>
+                                  #{eScore.deptRank ?? "—"}<span style={{fontSize:"10px",fontWeight:400,color:"#94a3b8"}}> /{eScore.deptTotal ?? "—"}</span>
+                                </Typography>
+                              </Box>
+                              <Box sx={{background:COLOR_ORANK_BG,border:`1px solid ${COLOR_ORANK_BORDER}`,borderRadius:"8px",px:1.5,py:0.5,textAlign:"center"}}>
+                                <Typography sx={{fontSize:"10px",color:COLOR_ORANK_TEXT,fontWeight:600}}>OVERALL RANK</Typography>
+                                <Typography sx={{fontSize:"16px",fontWeight:800,color:COLOR_ORANK_TEXT,lineHeight:1.2}}>
+                                  #{eScore.overallRank ?? "—"}<span style={{fontSize:"10px",fontWeight:400,color:"#94a3b8"}}> /{eScore.overallTotal ?? "—"}</span>
+                                </Typography>
+                              </Box>
                             </Box>
                           </Box>
-                        ))}
-                        <Box sx={{mt:1.5,pt:1.5,borderTop:"1px solid #f1f5f9",display:"flex",justifyContent:"space-between"}}>
-                          <Typography sx={{fontSize:"12px",color:"#64748b"}}>CGPA</Typography>
-                          <Typography sx={{fontWeight:700,fontSize:"16px",color:"#0891b2"}}>{eScore.cgpa}</Typography>
+
+                          {/* Overall percentile row — Dept (sky) + Overall (orange), fixed colors */}
+                          <Box sx={{display:"flex",gap:1,mb:2}}>
+                            <Box sx={{flex:1,background:COLOR_DEPT_BG,border:`1px solid ${COLOR_DEPT_BORDER}`,borderRadius:"8px",p:"8px",textAlign:"center"}}>
+                              <Typography sx={{fontSize:"10px",fontWeight:700,color:COLOR_DEPT_TEXT,textTransform:"uppercase",letterSpacing:"0.4px"}}>Dept</Typography>
+                              <Typography sx={{fontSize:"22px",fontWeight:800,color:COLOR_DEPT_TEXT,lineHeight:1.2}}>{eScore.deptPercentile?.overall??0}%</Typography>
+                              <Typography sx={{fontSize:"10px",color:COLOR_DEPT_TEXT,fontWeight:500}}>better than dept {icon(eScore.deptPercentile?.overall??0)}</Typography>
+                            </Box>
+                            <Box sx={{flex:1,background:COLOR_ALL_BG,border:`1px solid ${COLOR_ALL_BORDER}`,borderRadius:"8px",p:"8px",textAlign:"center"}}>
+                              <Typography sx={{fontSize:"10px",fontWeight:700,color:COLOR_ALL_TEXT,textTransform:"uppercase",letterSpacing:"0.4px"}}>Overall</Typography>
+                              <Typography sx={{fontSize:"22px",fontWeight:800,color:COLOR_ALL_TEXT,lineHeight:1.2}}>{eScore.allPercentile?.overall??0}%</Typography>
+                              <Typography sx={{fontSize:"10px",color:COLOR_ALL_TEXT,fontWeight:500}}>better than all {icon(eScore.allPercentile?.overall??0)}</Typography>
+                            </Box>
+                          </Box>
+
+                          {/* Per-parameter comparison */}
+                          <Typography sx={{fontSize:"11px",fontWeight:700,color:"#64748b",letterSpacing:"0.5px",textTransform:"uppercase",mb:1}}>Parameter Breakdown</Typography>
+                          {params.map(({label,emoji,dept,all})=>{
+                            const d = dept??0, a = all??0;
+                            return (
+                              <Box key={label} sx={{mb:1.5,background:"#f8fafc",borderRadius:"8px",p:"10px 12px",border:"1px solid #f1f5f9"}}>
+                                <Box sx={{display:"flex",justifyContent:"space-between",alignItems:"center",mb:0.8}}>
+                                  <Typography sx={{fontSize:"12px",fontWeight:700,color:"#1e293b"}}>{emoji} {label}</Typography>
+                                  <Box sx={{display:"flex",gap:0.8}}>
+                                    <span style={{background:COLOR_DEPT_BG,color:COLOR_DEPT_TEXT,border:`1px solid ${COLOR_DEPT_BORDER}`,
+                                      padding:"2px 8px",borderRadius:"999px",fontSize:"11px",fontWeight:700}}>
+                                      Dept {d}%
+                                    </span>
+                                    <span style={{background:COLOR_ALL_BG,color:COLOR_ALL_TEXT,border:`1px solid ${COLOR_ALL_BORDER}`,
+                                      padding:"2px 8px",borderRadius:"999px",fontSize:"11px",fontWeight:700}}>
+                                      All {a}%
+                                    </span>
+                                  </Box>
+                                </Box>
+                                {/* Dual bar — sky for dept, orange for all */}
+                                <Box sx={{display:"flex",flexDirection:"column",gap:"4px"}}>
+                                  <Box sx={{display:"flex",alignItems:"center",gap:1}}>
+                                    <Typography sx={{fontSize:"9px",color:COLOR_DEPT_TEXT,fontWeight:600,width:"28px"}}>Dept</Typography>
+                                    <Box sx={{flex:1,height:"6px",background:"#e0f2fe",borderRadius:"3px",overflow:"hidden"}}>
+                                      <Box sx={{height:"100%",width:`${d}%`,background:COLOR_BAR_DEPT,borderRadius:"3px"}}/>
+                                    </Box>
+                                    <Typography sx={{fontSize:"9px",fontWeight:700,color:COLOR_DEPT_TEXT,width:"26px",textAlign:"right"}}>{d}%</Typography>
+                                  </Box>
+                                  <Box sx={{display:"flex",alignItems:"center",gap:1}}>
+                                    <Typography sx={{fontSize:"9px",color:COLOR_ALL_TEXT,fontWeight:600,width:"28px"}}>All</Typography>
+                                    <Box sx={{flex:1,height:"6px",background:"#ffedd5",borderRadius:"3px",overflow:"hidden"}}>
+                                      <Box sx={{height:"100%",width:`${a}%`,background:COLOR_BAR_ALL,borderRadius:"3px"}}/>
+                                    </Box>
+                                    <Typography sx={{fontSize:"9px",fontWeight:700,color:COLOR_ALL_TEXT,width:"26px",textAlign:"right"}}>{a}%</Typography>
+                                  </Box>
+                                </Box>
+                              </Box>
+                            );
+                          })}
+
+                          {/* CGPA footer */}
+                          <Box sx={{mt:1,pt:1.5,borderTop:"1px solid #f1f5f9",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <Typography sx={{fontSize:"12px",color:"#64748b"}}>CGPA</Typography>
+                            <Typography sx={{fontWeight:800,fontSize:"18px",color:"#0891b2"}}>{eScore.cgpa}</Typography>
+                          </Box>
                         </Box>
-                      </Box>
-                    )}
+                      );
+                    })()}
+
                   </Box>
 
                   {/* RIGHT — entries list (like subjects table) */}

@@ -32,6 +32,15 @@ function StudentDashboard() {
   const studentId = localStorage.getItem("userId");
   const token     = localStorage.getItem("token");
 
+  /* Decode department from JWT */
+  const userDept = (() => {
+    try {
+      if (!token) return "";
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      return payload.department || "";
+    } catch { return ""; }
+  })();
+
   // ── Data state ──────────────────────────
   const [studentName,      setStudentName]      = useState("");
   const [cgpa,             setCgpa]             = useState("0.00");
@@ -238,7 +247,13 @@ function StudentDashboard() {
 
       {/* ══════════════ SIDEBAR ══════════════ */}
       <div className="sidebar">
-        <h2>SLEA</h2>
+        <h2 style={{marginBottom:"2px"}}>SLEA</h2>
+        {userDept && (
+          <div style={{fontSize:"11px",color:"rgba(255,255,255,0.55)",fontWeight:500,
+            letterSpacing:"0.5px",textTransform:"uppercase",marginBottom:"16px",marginTop:"2px"}}>
+            {userDept} Dept
+          </div>
+        )}
 
         {/* Nav buttons */}
         <button
@@ -436,7 +451,16 @@ function StudentDashboard() {
         ════════════════════════════════ */}
         {activeTab === "Dashboard" && (
           <>
-            <h1>Welcome, {studentName} 👋</h1>
+            <h1 style={{display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
+              Welcome, {studentName} 
+              {userDept && (
+                <span style={{fontSize:"13px",fontWeight:600,background:"rgba(56,189,248,0.15)",
+                  border:"1px solid rgba(56,189,248,0.3)",color:"#38bdf8",padding:"3px 12px",
+                  borderRadius:"999px",letterSpacing:"0.3px"}}>
+                  {userDept}
+                </span>
+              )}
+            </h1>
 
             {/* ── Summary cards ── */}
             <div className="summary">
@@ -445,11 +469,11 @@ function StudentDashboard() {
                 <p>{semesters.reduce((sum, s) => sum + s.subjects.length, 0)}</p>
               </div>
               <div className="summary-card">
-                <h3>Overall CGPA</h3>
+                <h3>CGPA</h3>
                 <p>{cgpa}</p>
               </div>
               <div className="summary-card">
-                <h3>Overall Attendance</h3>
+                <h3>Attendance</h3>
                 <p>{overallAttendance}%</p>
               </div>
               <div className="summary-card">

@@ -460,7 +460,7 @@ export default function SuperAdminDashboard() {
               sx={{ mr: 2, ...(open && { display: "none" }) }}>
               <MenuIcon />
             </IconButton>
-            <Typography variant="h6" sx={{ flexGrow: 1 }}>Super Admin Dashboard</Typography>
+            <Typography variant="h6" sx={{ flexGrow: 1 }}>Administrative Dashboard</Typography>
           </Toolbar>
         </AppBar>
 
@@ -523,7 +523,7 @@ export default function SuperAdminDashboard() {
           {/* ════ DASHBOARD ════ */}
           {selectedItem === "Dashboard" && (
             <Box>
-              <Typography variant="h4" sx={{ fontWeight: "bold", mb: 3 }}>Welcome, Super Admin 👋</Typography>
+              <Typography variant="h4" sx={{ fontWeight: "bold", mb: 3 }}>Welcome, Superadmin </Typography>
 
               {/* Top stat cards */}
               <div style={{ display: "flex", gap: "20px", marginBottom: "30px", flexWrap: "wrap" }}>
