@@ -1,13 +1,52 @@
 const express = require("express");
 const cors    = require("cors");
 const jwt     = require("jsonwebtoken");
+const helmet  = require("helmet");
+const morgan  = require("morgan");
+const fs      = require("fs");
+const path    = require("path");
 require("dotenv").config();
 
 const pool = require("./src/config/config");
 
 const app = express();
+
+/* ====================================================
+   SECURITY HEADERS — helmet
+==================================================== */
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }, // allow frontend assets
+}));
+
+/* ====================================================
+   REQUEST LOGGING — morgan
+   Logs to console (dev) + appended to logs/access.log
+==================================================== */
+const logDir = path.join(__dirname, "logs");
+if (!fs.existsSync(logDir)) fs.mkdirSync(logDir);
+const accessLogStream = fs.createWriteStream(path.join(logDir, "access.log"), { flags: "a" });
+app.use(morgan("dev"));                              // coloured output in terminal
+app.use(morgan("combined", { stream: accessLogStream })); // persistent file log
+
+/* ====================================================
+   CORS & BODY PARSING
+==================================================== */
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "10kb" }));           // reject oversized payloads
+
+/* ====================================================
+   GLOBAL INPUT SANITISER
+   Strips leading/trailing whitespace from all string
+   fields in req.body so routes don't need to .trim()
+==================================================== */
+app.use((req, _res, next) => {
+  if (req.body && typeof req.body === "object") {
+    for (const key of Object.keys(req.body)) {
+      if (typeof req.body[key] === "string") req.body[key] = req.body[key].trim();
+    }
+  }
+  next();
+});
 
 const SECRET_KEY = process.env.JWT_SECRET || "manikandan_secret_key";
 
@@ -47,10 +86,50 @@ function verifySuperAdmin(req, res, next) {
 }
 
 /* ====================================================
+   VALIDATION HELPERS
+==================================================== */
+/**
+ * validate(fields) — middleware factory
+ * Usage: validate({ email:"string", password:"string" })
+ * Checks each field exists and is a non-empty string (or number where type="number")
+ */
+function validate(fields) {
+  return (req, res, next) => {
+    const missing = [];
+    for (const [key, type] of Object.entries(fields)) {
+      const val = req.body[key];
+      if (val === undefined || val === null || val === "") {
+        missing.push(key);
+      } else if (type === "number" && isNaN(Number(val))) {
+        return res.status(400).json({ message: `'${key}' must be a number` });
+      }
+    }
+    if (missing.length > 0)
+      return res.status(400).json({ message: `Missing required fields: ${missing.join(", ")}` });
+    next();
+  };
+}
+
+/** isEmail — basic format check */
+const isEmail = v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+
+/* ====================================================
+   GLOBAL ERROR HANDLER (place after all routes)
+==================================================== */
+function errorHandler(err, req, res, _next) {
+  const errLogPath = path.join(__dirname, "logs", "error.log");
+  const entry = `[${new Date().toISOString()}] ${req.method} ${req.originalUrl} — ${err.message}\n${err.stack}\n\n`;
+  fs.appendFileSync(errLogPath, entry);
+  console.error("❌ Unhandled error:", err.message);
+  res.status(500).json({ message: "Internal server error" });
+}
+
+/* ====================================================
    LOGIN
 ==================================================== */
-app.post("/login", async (req, res) => {
+app.post("/login", validate({ email:"string", password:"string" }), async (req, res) => {
   const { email, password } = req.body;
+  if (!isEmail(email)) return res.status(400).json({ message: "Invalid email format" });
   try {
     const [rows] = await pool.query("SELECT * FROM users WHERE email = ?", [email]);
     if (rows.length === 0) return res.status(400).json({ message: "User not found" });
@@ -59,7 +138,7 @@ app.post("/login", async (req, res) => {
     const token = jwt.sign(
       { id: user.id, role: user.role, department: user.department },
       SECRET_KEY,
-      { expiresIn: "1h" }
+      { expiresIn: "8h" }
     );
     res.json({ token, role: user.role, id: user.id, department: user.department });
   } catch (error) {
@@ -107,10 +186,12 @@ app.delete("/superadmin/department/:name", verifyToken, verifySuperAdmin, async 
 /* ====================================================
    SUPERADMIN — ADD / GET / DELETE ADMIN
 ==================================================== */
-app.post("/superadmin/add-admin", verifyToken, verifySuperAdmin, async (req, res) => {
+app.post("/superadmin/add-admin", verifyToken, verifySuperAdmin,
+  validate({ name:"string", email:"string", password:"string", department:"string" }),
+  async (req, res) => {
   const { name, email, password, department } = req.body;
-  if (!name || !email || !password || !department)
-    return res.status(400).json({ message: "All fields required" });
+  if (!isEmail(email)) return res.status(400).json({ message: "Invalid email format" });
+  if (password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters" });
   try {
     const [deptRows] = await pool.query("SELECT name FROM departments WHERE name = ?", [department]);
     if (deptRows.length === 0) return res.status(400).json({ message: "Invalid department." });
@@ -320,16 +401,20 @@ app.get("/announcement/:id/replies", verifyToken, async (req, res) => {
 /* ====================================================
    ADD STUDENT (ADMIN — dept restricted)
 ==================================================== */
-app.post("/add-student", verifyToken, verifyAdmin, async (req, res) => {
+app.post("/add-student", verifyToken, verifyAdmin,
+  validate({ name:"string", rollno:"string", email:"string", password:"string" }),
+  async (req, res) => {
   const { name, rollno, email, password } = req.body;
-  if (!name || !rollno || !email || !password)
-    return res.status(400).json({ message: "All fields required" });
+  if (!isEmail(email)) return res.status(400).json({ message: "Invalid email format" });
+  if (password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters" });
   const adminDepartment = req.user.department;
   if (!adminDepartment)
     return res.status(403).json({ message: "Admin has no department assigned" });
   try {
     const [existing] = await pool.query("SELECT id FROM users WHERE email = ?", [email]);
     if (existing.length > 0) return res.status(400).json({ message: "Email already exists" });
+    const [rollExists] = await pool.query("SELECT id FROM users WHERE rollno = ?", [rollno]);
+    if (rollExists.length > 0) return res.status(400).json({ message: "Roll number already exists" });
     await pool.query(
       "INSERT INTO users (name, rollno, email, password, role, department) VALUES (?, ?, ?, ?, 'student', ?)",
       [name, rollno, email, password, adminDepartment]
@@ -434,9 +519,12 @@ app.get("/subjects", verifyToken, async (req, res) => {
 /* ====================================================
    ADD SUBJECT (admin only)
 ==================================================== */
-app.post("/add-subject", verifyToken, verifyAdmin, async (req, res) => {
+app.post("/add-subject", verifyToken, verifyAdmin,
+  validate({ subject_name:"string", credits:"number" }),
+  async (req, res) => {
   const { subject_name, credits, semester } = req.body;
-  if (!subject_name || !credits) return res.status(400).json({ message: "Subject name and credits required" });
+  const cr = Number(credits);
+  if (cr < 1 || cr > 5) return res.status(400).json({ message: "Credits must be between 1 and 5" });
   const sem = semester || "Sem 1";
   const department = req.user.department;
   if (!department) return res.status(403).json({ message: "Admin has no department assigned" });
@@ -448,7 +536,7 @@ app.post("/add-subject", verifyToken, verifyAdmin, async (req, res) => {
     if (existing.length > 0) return res.status(400).json({ message: "Subject already exists in your department" });
     await pool.query(
       "INSERT INTO subjects (subject_name, department, credits, semester) VALUES (?, ?, ?, ?)",
-      [subject_name, department, credits, sem]
+      [subject_name, department, cr, sem]
     );
     res.json({ message: `Subject added to ${department} department` });
   } catch (error) {
@@ -483,12 +571,14 @@ app.delete("/subject/:id", verifyToken, verifyAdmin, async (req, res) => {
 /* ====================================================
    ADD MARKS (ADMIN ONLY)
 ==================================================== */
-app.post("/add-marks", verifyToken, verifyAdmin, async (req, res) => {
+app.post("/add-marks", verifyToken, verifyAdmin,
+  validate({ student_id:"number", subject_id:"number", marks_scored:"number", semester:"string" }),
+  async (req, res) => {
   const { student_id, subject_id, marks_scored, semester } = req.body;
-  if (!student_id || !subject_id || marks_scored === undefined || !semester)
-    return res.status(400).json({ message: "All fields required" });
+  const marks = Number(marks_scored);
+  if (marks < 0 || marks > 100) return res.status(400).json({ message: "Marks must be between 0 and 100" });
   const department = req.user.department;
-  const { grade, gradePoints } = calculateGrade(Number(marks_scored));
+  const { grade, gradePoints } = calculateGrade(marks);
   try {
     const [subjectRows] = await pool.query("SELECT credits FROM subjects WHERE id = ?", [subject_id]);
     if (subjectRows.length === 0) return res.status(404).json({ message: "Subject not found" });
@@ -503,7 +593,7 @@ app.post("/add-marks", verifyToken, verifyAdmin, async (req, res) => {
     await pool.query(
       `INSERT INTO marks (student_id, subject_id, marks_scored, grade, grade_points, semester, department)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [student_id, subject_id, marks_scored, grade, gradePoints, semester, department]
+      [student_id, subject_id, marks, grade, gradePoints, semester, department]
     );
 
     const [semMarks] = await pool.query(
@@ -643,11 +733,10 @@ app.get("/student-attendance/:id", verifyToken, async (req, res) => {
    ✅ NEW: ADD / UPDATE ATTENDANCE (Admin)
    Calculates percentage from present_days / total_days
 ==================================================== */
-app.post("/add-attendance", verifyToken, verifyAdmin, async (req, res) => {
+app.post("/add-attendance", verifyToken, verifyAdmin,
+  validate({ student_id:"number", semester:"string", present_days:"number", total_days:"number" }),
+  async (req, res) => {
   const { student_id, semester, present_days, total_days } = req.body;
-  if (!student_id || !semester || present_days === undefined || !total_days)
-    return res.status(400).json({ message: "student_id, semester, present_days, total_days required" });
-
   const p = Number(present_days), t = Number(total_days);
   if (p < 0 || t <= 0)  return res.status(400).json({ message: "Invalid days values" });
   if (p > t)            return res.status(400).json({ message: "Present days cannot exceed total days" });
@@ -864,16 +953,17 @@ app.get("/admin/all-efficiency", verifyToken, verifyAdmin, async (req, res) => {
     );
     const cgpaMap = {};
     for (const r of marksAll) {
-      if (!cgpaMap[r.student_id]) cgpaMap[r.student_id] = { weighted: 0, credits: 0 };
-      cgpaMap[r.student_id].weighted += Number(r.grade_points) * Number(r.credits);
-      cgpaMap[r.student_id].credits  += Number(r.credits);
+      const key = String(r.student_id);
+      if (!cgpaMap[key]) cgpaMap[key] = { weighted: 0, credits: 0 };
+      cgpaMap[key].weighted += Number(r.grade_points) * Number(r.credits);
+      cgpaMap[key].credits  += Number(r.credits);
     }
 
     const calcScore = id => {
       const sk = maxSkill>0?((skillMap[String(id)]||0)/maxSkill)*100:0;
       const ac = maxAch>0?((achMap[String(id)]||0)/maxAch)*100:0;
       const at = maxAct>0?((actMap[String(id)]||0)/maxAct)*100:0;
-      const cd = cgpaMap[id]; const cg = cd&&cd.credits>0?Math.min((cd.weighted/cd.credits/10)*100,100):0;
+      const cd = cgpaMap[String(id)]; const cg = cd&&cd.credits>0?Math.min((cd.weighted/cd.credits/10)*100,100):0;
       return { sk, ac, at, cg, final: sk*0.30+ac*0.20+at*0.20+cg*0.30 };
     };
 
@@ -882,7 +972,7 @@ app.get("/admin/all-efficiency", verifyToken, verifyAdmin, async (req, res) => {
 
     const results = displayStudents.map(s => {
       const { sk, ac, at, cg, final } = calcScore(s.id);
-      const cd   = cgpaMap[s.id];
+      const cd   = cgpaMap[String(s.id)];
       const cgpa = cd && cd.credits > 0 ? cd.weighted / cd.credits : 0;
       const band = final>=80?"Excellent":final>=60?"Good":final>=40?"Needs Improvement":"Weak";
 
@@ -900,6 +990,15 @@ app.get("/admin/all-efficiency", verifyToken, verifyAdmin, async (req, res) => {
         return Math.round((vals.filter(v => v < myVal).length / vals.length) * 100);
       };
 
+      /* CGPA values for percentile */
+      const myCgpaVal = cgpa;
+      const cgpaValMap = Object.fromEntries(
+        allStudents.map(x => {
+          const c = cgpaMap[String(x.id)];
+          return [String(x.id), c && c.credits > 0 ? c.weighted / c.credits : 0];
+        })
+      );
+
       return {
         id: s.id, name: s.name, rollno: s.rollno, department: s.department,
         skillScore: Math.round(sk), achievementScore: Math.round(ac),
@@ -909,16 +1008,18 @@ app.get("/admin/all-efficiency", verifyToken, verifyAdmin, async (req, res) => {
         overallRank, overallTotal: allStudents.length,
         deptRank,    deptTotal: deptStudentIds.length,
         deptPercentile: {
-          skill:   pct(skillMap[String(s.id)]||0, deptStudentIds, skillMap),
-          achievement: pct(achMap[String(s.id)]||0, deptStudentIds, achMap),
-          activity: pct(actMap[String(s.id)]||0, deptStudentIds, actMap),
-          overall:  Math.round((deptStudentIds.filter(id=>(allScoreMap[id]||0)<final).length/deptStudentIds.length)*100),
+          skill:       pct(skillMap[String(s.id)]||0, deptStudentIds, skillMap),
+          achievement: pct(achMap[String(s.id)]||0,   deptStudentIds, achMap),
+          activity:    pct(actMap[String(s.id)]||0,   deptStudentIds, actMap),
+          cgpa:        pct(myCgpaVal,                  deptStudentIds, cgpaValMap),
+          overall:     Math.round((deptStudentIds.filter(id=>(allScoreMap[id]||0)<final).length/deptStudentIds.length)*100),
         },
         allPercentile: {
-          skill:   pct(skillMap[String(s.id)]||0, allStudents.map(x=>x.id), skillMap),
-          achievement: pct(achMap[String(s.id)]||0, allStudents.map(x=>x.id), achMap),
-          activity: pct(actMap[String(s.id)]||0, allStudents.map(x=>x.id), actMap),
-          overall:  Math.round((Object.values(allScoreMap).filter(v=>v<final).length/allStudents.length)*100),
+          skill:       pct(skillMap[String(s.id)]||0, allStudents.map(x=>x.id), skillMap),
+          achievement: pct(achMap[String(s.id)]||0,   allStudents.map(x=>x.id), achMap),
+          activity:    pct(actMap[String(s.id)]||0,   allStudents.map(x=>x.id), actMap),
+          cgpa:        pct(myCgpaVal,                  allStudents.map(x=>x.id), cgpaValMap),
+          overall:     Math.round((Object.values(allScoreMap).filter(v=>v<final).length/allStudents.length)*100),
         },
       };
     });
@@ -1163,6 +1264,11 @@ app.get("/admin/student-efficiency-data/:studentId", verifyToken, verifyAdmin, a
     res.json({ skill: skillRows[0] || null, activities: actRows, achievements: achRows });
   } catch (err) { res.status(500).json({ message: "Server error" }); }
 });
+
+/* ====================================================
+   GLOBAL ERROR HANDLER — must be last middleware
+==================================================== */
+app.use(errorHandler);
 
 /* ====================================================
    FIX: SQL ALTER for subjects.semester column (run once)
