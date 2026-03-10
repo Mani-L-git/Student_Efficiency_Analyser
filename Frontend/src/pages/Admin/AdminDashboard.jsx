@@ -190,14 +190,12 @@ export default function AdminDashboard() {
   const [subCred,    setSubCred]    = useState("");
   const [subSem,     setSubSem]     = useState("Sem 1");
 
-  /* marks */
-  const [mRoll,    setMRoll]    = useState("");
-  const [mStud,    setMStud]    = useState(null);
-  const [mErr,     setMErr]     = useState("");
-  const [mSubj,    setMSubj]    = useState("");
-  const [mScore,   setMScore]   = useState("");
-  const [mSem,     setMSem]     = useState("");
-  const [mResult,  setMResult]  = useState(null);
+  /* marks — excel upload */
+  const [xlRows,    setXlRows]    = useState([]);   /* parsed rows from excel */
+  const [xlErrors,  setXlErrors]  = useState([]);   /* per-row error messages  */
+  const [xlLoading, setXlLoading] = useState(false);
+  const [xlMsg,     setXlMsg]     = useState("");
+  const [xlFileName,setXlFileName]= useState("");
 
   /* attendance — FIX #3: removed subject */
   const [aRoll,    setARoll]    = useState("");
@@ -352,15 +350,138 @@ export default function AdminDashboard() {
   };
 
   /* ── marks ── */
-  const addMark = async () => {
-    if(!mStud||!mSubj||!mScore||!mSem){alert("Fill all fields");return;}
-    const m=Number(mScore); if(m<0||m>100){alert("Marks 0–100");return;}
-    const r=await fetch("http://localhost:5000/add-marks",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({student_id:mStud.id,subject_id:mSubj,marks_scored:m,semester:mSem})});
-    const d=await r.json(); if(!r.ok){alert(d.message);return;}
-    setMResult({...d,semester:mSem});
-    setMRoll("");setMStud(null);setMErr("");setMScore("");setMSem("");setMSubj("");
-    doFetch("all-marks",setMarks); loadAllEff();
+  /* ── Excel/CSV upload for marks ── */
+  const parseExcel = async (file) => {
+    setXlMsg(""); setXlErrors([]);
+    setXlFileName(file.name);
+    const ext = file.name.split(".").pop().toLowerCase();
+    try {
+      let raw = [];
+
+      if (ext === "csv") {
+        /* Parse CSV directly — no library needed */
+        const text = await file.text();
+        raw = text.split(/\r?\n/).map(line =>
+          line.split(",").map(c => c.trim().replace(/^"|"$/g, ""))
+        ).filter(r => r.some(c => c !== ""));
+      } else {
+        /* Parse xlsx/xls via SheetJS CDN */
+        const XLSX = await import("https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs");
+        const buf  = await file.arrayBuffer();
+        const wb   = XLSX.read(buf, { type:"array" });
+        const ws   = wb.Sheets[wb.SheetNames[0]];
+        raw = XLSX.utils.sheet_to_json(ws, { header:1, defval:"" });
+      }
+
+      /* Skip header row if first cell looks like a label */
+      const dataRows = (raw[0]?.[0]?.toString().toLowerCase().includes("roll") ? raw.slice(1) : raw)
+        .filter(r => r.some(c => c !== ""));
+
+      const parsed = dataRows.map((r, i) => ({
+        row: i + 1,
+        roll_no:  String(r[0] ?? "").trim(),
+        semester: String(r[1] ?? "").trim(),
+        subject:  String(r[2] ?? "").trim(),
+        marks:    String(r[3] ?? "").trim(),
+        status:   "pending",
+        message:  "",
+      }));
+      setXlRows(parsed);
+    } catch(e) {
+      setXlMsg("❌ Could not read file — supported formats: .csv, .xlsx, .xls");
+    }
   };
+
+  const submitExcel = async () => {
+    if (!xlRows.length) return;
+    setXlLoading(true);
+    setXlMsg("");
+    const updated = [...xlRows];
+
+    /* Normalize helper — remove extra spaces, lowercase */
+    const norm = s => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+
+    for (let i = 0; i < updated.length; i++) {
+      const row = updated[i];
+      if (row.status === "ok") continue;
+
+      /* Validate locally first */
+      const m = Number(row.marks);
+      if (!row.roll_no)        { updated[i] = {...row, status:"error", message:"Missing roll_no in column A"};     continue; }
+      if (!row.semester)       { updated[i] = {...row, status:"error", message:"Missing semester in column B"};    continue; }
+      if (!row.subject)        { updated[i] = {...row, status:"error", message:"Missing subject in column C"};     continue; }
+      if (isNaN(m)||m<0||m>100){ updated[i] = {...row, status:"error", message:"Marks must be 0–100 (column D)"}; continue; }
+
+      /* Find student — normalize + strip all whitespace */
+      const normRoll = s => String(s ?? "").replace(/\s/g, "").toUpperCase();
+      const stud = students.find(s => normRoll(s.rollno) === normRoll(row.roll_no));
+      if (!stud) {
+        const available = students.slice(0,8).map(s=>s.rollno).join(", ");
+        updated[i] = {...row, status:"error",
+          message:`Roll no "${row.roll_no}" not found. Students: ${available}`};
+        continue;
+      }
+
+      /* Find subject — 4-level matching */
+      const csvSubNorm = norm(row.subject).replace(/[^a-z0-9 ]/g, "");
+      // 1. Exact
+      let subj = subjects.find(s => norm(s.subject_name) === norm(row.subject));
+      // 2. Strip special chars both sides
+      if (!subj) subj = subjects.find(s =>
+        norm(s.subject_name).replace(/[^a-z0-9 ]/g,"") === csvSubNorm);
+      // 3. CSV subject contains DB subject name
+      if (!subj) subj = subjects.find(s =>
+        csvSubNorm.includes(norm(s.subject_name).replace(/[^a-z0-9 ]/g,"")));
+      // 4. DB subject name contains CSV subject
+      if (!subj) subj = subjects.find(s =>
+        norm(s.subject_name).replace(/[^a-z0-9 ]/g,"").includes(csvSubNorm));
+      // 5. Any word overlap >= 2 matching words
+      if (!subj) {
+        const csvWords = csvSubNorm.split(" ").filter(w => w.length > 2);
+        subj = subjects.reduce((best, s) => {
+          const dbWords = norm(s.subject_name).replace(/[^a-z0-9 ]/g,"").split(" ").filter(w => w.length > 2);
+          const matches = csvWords.filter(w => dbWords.includes(w)).length;
+          return matches > (best.score||0) ? {s, score:matches} : best;
+        }, {}).s;
+        if (subj) {
+          const csvW = csvSubNorm.split(" ").filter(w=>w.length>2);
+          const dbW  = norm(subj.subject_name).replace(/[^a-z0-9 ]/g,"").split(" ").filter(w=>w.length>2);
+          const matches = csvW.filter(w=>dbW.includes(w)).length;
+          if (matches < 1) subj = null; // must have at least 1 meaningful word match
+        }
+      }
+      if (!subj) {
+        const available = subjects.map(s => `"${s.subject_name}"`).join(", ");
+        updated[i] = {...row, status:"error",
+          message:`"${row.subject}" didn't match any subject. Subjects in DB: ${available}`};
+        continue;
+      }
+
+      /* POST to API */
+      try {
+        const r = await fetch("http://localhost:5000/add-marks", {
+          method:"POST",
+          headers:{"Content-Type":"application/json",...getAuth()},
+          body: JSON.stringify({ student_id:stud.id, subject_id:subj.id, marks_scored:m, semester:row.semester }),
+        });
+        const d = await r.json();
+        updated[i] = r.ok
+          ? {...row, status:"ok",    message:`${d.grade} · ${d.gradePoints} pts`}
+          : {...row, status:"error", message: d.message};
+      } catch {
+        updated[i] = {...row, status:"error", message:"Network error — is the server running?"};
+      }
+      setXlRows([...updated]);
+    }
+
+    const ok  = updated.filter(r=>r.status==="ok").length;
+    const err = updated.filter(r=>r.status==="error").length;
+    setXlMsg(`✅ ${ok} row(s) saved${err ? ` · ❌ ${err} row(s) failed` : ""}`);
+    setXlLoading(false);
+    doFetch("all-marks", setMarks);
+    loadAllEff();
+  };
+
   const delMark = async id => {
     if(!window.confirm("Delete this mark?"))return;
     await fetch(`http://localhost:5000/mark/${id}`,{method:"DELETE",headers:getAuth()});
@@ -786,7 +907,10 @@ export default function AdminDashboard() {
           {/* ══════════════════ MARKS */}
           {tab==="Marks" && (
             <Box>
-              <Typography variant="h5" sx={{fontWeight:700,mb:3}}>Add Marks</Typography>
+              <Typography variant="h5" sx={{fontWeight:700,mb:1}}>Marks — Bulk Upload</Typography>
+              <Typography sx={{color:"#64748b",fontSize:"13px",mb:3}}>
+                Upload an Excel file with columns: <strong>roll_no · semester · subject · marks</strong>
+              </Typography>
 
               {/* Grade reference */}
               <Box sx={{...S.card,mb:3}}>
@@ -802,40 +926,178 @@ export default function AdminDashboard() {
                 </Box>
               </Box>
 
-              {/* Form — FIX #4: autocomplete */}
-              <Box sx={{...S.card,maxWidth:500,mb:3}}>
-                <RollInput value={mRoll}
-                  onChange={v=>rollChange(v,setMRoll,setMStud,setMErr)}
-                  onSelect={s=>pickStud(s,setMStud,setMErr,setMRoll)}
-                  pool={students}/>
-                <FoundBanner student={mStud} error={mErr}/>
-                <select style={S.inp} value={mSubj} onChange={e=>setMSubj(e.target.value)}>
-                  <option value="">Select Subject</option>
-                  {subjects.map(s=><option key={s.id} value={s.id}>{s.subject_name} ({s.semester||"Sem 1"}) — {s.credits} cr</option>)}
-                </select>
-                <select style={S.inp} value={mSem} onChange={e=>setMSem(e.target.value)}>
-                  <option value="">Select Semester</option>
-                  {SEMESTERS.map(s=><option key={s} value={s}>{s}</option>)}
-                </select>
-                <input style={S.inp} type="number" placeholder="Marks Scored (0–100)" value={mScore} onChange={e=>setMScore(e.target.value)}/>
-                <button style={{...S.btn,opacity:mStud?1:0.5}} onClick={addMark} disabled={!mStud}>Add Marks</button>
+              {/* Upload card */}
+              <Box sx={{...S.card,mb:3,border:"2px dashed #cbd5e1"}}>
+                <Box sx={{display:"flex",gap:3,flexWrap:"wrap",alignItems:"flex-start"}}>
+
+                  {/* Left — upload + template */}
+                  <Box sx={{flex:"0 0 300px"}}>
+                    <Typography sx={{fontWeight:700,fontSize:"15px",mb:2,color:"#0f172a"}}>📂 Upload Excel File</Typography>
+
+                    {/* File drop zone */}
+                    <label style={{display:"block",cursor:"pointer"}}>
+                      <Box sx={{border:"2px dashed #94a3b8",borderRadius:"12px",p:"24px",textAlign:"center",
+                        background:"#f8fafc","&:hover":{background:"#f1f5f9",borderColor:"#2563eb"},transition:"all 0.2s"}}>
+                        <Typography sx={{fontSize:"32px",mb:1}}>📊</Typography>
+                        <Typography sx={{fontWeight:600,fontSize:"14px",color:"#1e293b",mb:0.5}}>
+                          {xlFileName || "Click to choose file"}
+                        </Typography>
+                        <Typography sx={{fontSize:"12px",color:"#64748b"}}>
+                          {xlFileName ? "File selected ✓" : ".csv · .xlsx · .xls"}
+                        </Typography>
+                      </Box>
+                      <input type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}}
+                        onChange={e=>{ if(e.target.files[0]) parseExcel(e.target.files[0]); e.target.value=""; }}/>
+                    </label>
+
+                    {/* Submit button */}
+                    {xlRows.length > 0 && (
+                      <button style={{...S.btn,marginTop:"12px",opacity:xlLoading?0.6:1}}
+                        disabled={xlLoading} onClick={submitExcel}>
+                        {xlLoading ? "⏳ Uploading..." : `⬆️ Submit ${xlRows.filter(r=>r.status!=="ok").length} Row(s)`}
+                      </button>
+                    )}
+
+                    {/* Reset */}
+                    {xlRows.length > 0 && !xlLoading && (
+                      <button onClick={()=>{setXlRows([]);setXlErrors([]);setXlMsg("");setXlFileName("");}}
+                        style={{width:"100%",marginTop:"8px",padding:"10px",background:"#f1f5f9",border:"1px solid #e2e8f0",
+                          borderRadius:"8px",cursor:"pointer",fontSize:"13px",fontWeight:600,color:"#64748b"}}>
+                        🗑 Clear
+                      </button>
+                    )}
+
+                    {xlMsg && (
+                      <Box sx={{mt:1.5,p:"10px 14px",borderRadius:"8px",fontSize:"13px",fontWeight:600,
+                        background: xlMsg.startsWith("✅")?"#f0fdf4":"#fef2f2",
+                        border: xlMsg.startsWith("✅")?"1px solid #86efac":"1px solid #fca5a5",
+                        color: xlMsg.startsWith("✅")?"#16a34a":"#dc2626"}}>
+                        {xlMsg}
+                      </Box>
+                    )}
+                  </Box>
+
+                  {/* Right — template + format guide */}
+                  <Box sx={{flex:"1 1 300px"}}>
+                    <Typography sx={{fontWeight:700,fontSize:"15px",mb:2,color:"#0f172a"}}>📋 Required Format</Typography>
+
+                    {/* Format table */}
+                    <Box sx={{...S.card,p:0,overflow:"hidden",mb:2,border:"1px solid #e2e8f0"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:"13px"}}>
+                        <thead>
+                          <tr style={{background:"#1e293b",color:"#94a3b8"}}>
+                            {["Column A","Column B","Column C","Column D"].map(h=>(
+                              <th key={h} style={{...S.th,padding:"8px 12px",fontSize:"11px"}}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr style={{background:"#f8fafc",borderBottom:"1px solid #f1f5f9"}}>
+                            <td style={{...S.td,padding:"8px 12px",fontWeight:700,color:"#0891b2"}}>roll_no</td>
+                            <td style={{...S.td,padding:"8px 12px",fontWeight:700,color:"#7c3aed"}}>semester</td>
+                            <td style={{...S.td,padding:"8px 12px",fontWeight:700,color:"#d97706"}}>subject</td>
+                            <td style={{...S.td,padding:"8px 12px",fontWeight:700,color:"#16a34a"}}>marks</td>
+                          </tr>
+                          
+                        </tbody>
+                      </table>
+                    </Box>
+
+            
+                    
+
+                    {/* Download template button */}
+                    <button onClick={()=>{
+                      const csv = "roll_no,semester,subject,marks\n7376231ME161,Sem 3,Subject Name,87\n";
+                      const a = document.createElement("a");
+                      a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
+                      a.download = "marks_template.csv";
+                      a.click();
+                    }} style={{width:"100%",marginTop:"10px",padding:"10px",
+                      background:"linear-gradient(90deg,#0891b2,#0e7490)",color:"#fff",
+                      border:"none",borderRadius:"8px",cursor:"pointer",fontSize:"13px",fontWeight:600}}>
+                      ⬇️ Download Template (.csv)
+                    </button>
+                  </Box>
+                </Box>
               </Box>
 
-              {mResult && (
-                <Box sx={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:"12px",p:3,mb:3}}>
-                  <Typography sx={{fontWeight:700,color:"#16a34a",mb:1.5}}>✅ Marks Added!</Typography>
-                  <Box sx={{display:"flex",gap:2,flexWrap:"wrap"}}>
-                    {[{l:"Grade",v:mResult.grade,c:GRADE_COLOR[mResult.grade]||"#16a34a"},{l:"Grade Pts",v:mResult.gradePoints,c:"#2563eb"},{l:"Credits",v:mResult.credits,c:"#7c3aed"},{l:"SGPA",v:mResult.sgpa,c:"#d97706"}].map(({l,v,c})=>(
-                      <Box key={l} sx={{background:"#fff",borderRadius:"8px",p:"10px 18px",textAlign:"center",border:`2px solid ${c}`}}>
-                        <Typography sx={{fontSize:"22px",fontWeight:700,color:c}}>{v}</Typography>
-                        <Typography sx={{fontSize:"12px",color:"#64748b"}}>{l}</Typography>
-                      </Box>
+              {/* Subjects quick-reference */}
+              {xlRows.length > 0 && subjects.length > 0 && (
+                <Box sx={{background:"#f0f9ff",border:"1px solid #bae6fd",borderRadius:"10px",p:"10px 16px",mb:2}}>
+                  <Typography sx={{fontSize:"12px",fontWeight:700,color:"#0369a1",mb:0.8}}>
+                    📋 Subjects in your dept — use these exact names in Column C:
+                  </Typography>
+                  <Box sx={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
+                    {subjects.map(s=>(
+                      <span key={s.id} style={{background:"#fff",border:"1px solid #7dd3fc",borderRadius:"6px",
+                        padding:"3px 10px",fontSize:"12px",fontFamily:"monospace",color:"#0c4a6e",fontWeight:500}}>
+                        {s.subject_name}
+                      </span>
                     ))}
                   </Box>
-                  <button onClick={()=>setMResult(null)} style={{marginTop:"10px",padding:"6px 16px",background:"#ef4444",color:"#fff",border:"none",borderRadius:"6px",cursor:"pointer"}}>Dismiss</button>
                 </Box>
               )}
 
+              {/* Preview table */}
+              {xlRows.length > 0 && (
+                <Box sx={{mb:3}}>
+                  <Typography variant="h6" sx={{fontWeight:700,mb:1.5,fontSize:"15px"}}>
+                    Preview — {xlRows.length} rows
+                    <span style={{marginLeft:"10px",fontSize:"12px",fontWeight:400,color:"#64748b"}}>
+                      {xlRows.filter(r=>r.status==="ok").length} saved ·{" "}
+                      {xlRows.filter(r=>r.status==="error").length} errors ·{" "}
+                      {xlRows.filter(r=>r.status==="pending").length} pending
+                    </span>
+                  </Typography>
+                  <Box sx={{...S.card,p:0,overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:"13px"}}>
+                      <thead>
+                        <tr style={{background:"#1e293b",color:"#fff"}}>
+                          {["#","Roll No","Semester","Subject","Marks","Status"].map(h=>(
+                            <th key={h} style={{...S.th,color:"#94a3b8",padding:"10px 14px"}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {xlRows.map((row,i)=>{
+                          const statusColor = row.status==="ok"?"#16a34a":row.status==="error"?"#dc2626":"#64748b";
+                          const statusBg    = row.status==="ok"?"#f0fdf4":row.status==="error"?"#fef2f2":"#f8fafc";
+                          return (
+                            <tr key={i} style={{borderBottom:"1px solid #f1f5f9",background:statusBg}}>
+                              <td style={{...S.td,color:"#94a3b8",padding:"9px 14px"}}>{row.row}</td>
+                              <td style={{...S.td,fontFamily:"monospace",fontSize:"12px",padding:"9px 14px"}}>{row.roll_no||<span style={{color:"#fca5a5"}}>—</span>}</td>
+                              <td style={{...S.td,padding:"9px 14px"}}>{row.semester}</td>
+                              <td style={{...S.td,padding:"9px 14px"}}>{row.subject}</td>
+                              <td style={{...S.td,fontWeight:700,padding:"9px 14px"}}>{row.marks}</td>
+                              <td style={{...S.td,padding:"9px 14px",maxWidth:"260px"}}>
+                                {row.status==="ok" && (
+                                  <span style={{display:"inline-flex",alignItems:"center",gap:"4px",
+                                    background:"#dcfce7",color:"#16a34a",padding:"3px 10px",
+                                    borderRadius:"999px",fontSize:"11px",fontWeight:700,border:"1px solid #bbf7d0"}}>
+                                    ✅ {row.message}
+                                  </span>
+                                )}
+                                {row.status==="pending" && (
+                                  <span style={{color:"#94a3b8",fontSize:"12px",fontWeight:600}}>⏳ Pending</span>
+                                )}
+                                {row.status==="error" && (
+                                  <Box sx={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:"8px",
+                                    p:"6px 10px",fontSize:"11px",color:"#dc2626",fontWeight:600,lineHeight:1.5}}>
+                                    ❌ {row.message}
+                                  </Box>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </Box>
+                </Box>
+              )}
+
+              {/* Existing marks table */}
               <Typography variant="h6" sx={{fontWeight:700,mb:2}}>All Marks ({marks.length})</Typography>
               <Box sx={{...S.card,p:0,overflowX:"auto",mb:4}}>
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
