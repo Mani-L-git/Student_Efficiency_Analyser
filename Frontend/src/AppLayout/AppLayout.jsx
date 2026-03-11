@@ -5,6 +5,7 @@ import Login from "../pages/Login/Login";
 import AdminDashboard from "../pages/Admin/AdminDashboard";
 import StudentDashboard from "../pages/StudentDashboard/StudentDashboard";
 import SuperAdminDashboard from "../pages/SuperAdminDashboard/SuperAdminDashboard";
+import FacultyDashboard from "../pages/Faculty/FacultyDashboard"; 
 
 
 
@@ -15,6 +16,7 @@ function AppLayout() {
       <Route path="/superadmin" element={<SuperAdminDashboard />} />
       <Route path="/admin" element={<AdminDashboard />} />
       <Route path="/student-dashboard" element={<StudentDashboard />} />
+      <Route path="/faculty"    element={<FacultyDashboard />} /> 
     </Routes>
   );
 }

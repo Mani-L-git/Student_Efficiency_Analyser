@@ -48,15 +48,17 @@ function Login() {
       localStorage.setItem("role", role);
       localStorage.setItem("userId", id);
 
-      if (role === "admin") {
-        navigate("/admin");
-      } else if (role === "student") {
-        navigate("/student-dashboard");
-      } else if (role === "superadmin") {
-        navigate("/superadmin");
-      } else {
-        alert("Unknown role!");
-      }
+     if (role === "admin") {
+  navigate("/admin");
+} else if (role === "student") {
+  navigate("/student-dashboard");
+} else if (role === "superadmin") {
+  navigate("/superadmin");
+} else if (role === "faculty") {
+  navigate("/faculty");
+} else {
+  alert("Unknown role!");
+}
 
     } catch (error) {
       if (error.response?.data?.message) {

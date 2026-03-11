@@ -22,8 +22,16 @@ import AnnouncementIcon from "@mui/icons-material/Announcement";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import LockIcon from "@mui/icons-material/Lock";
 import DeleteIcon from "@mui/icons-material/Delete";
+import GroupsIcon from "@mui/icons-material/Groups";
 import EditIcon from "@mui/icons-material/Edit";
 import LogoutIcon from "@mui/icons-material/Logout";
+import GroupIcon from "@mui/icons-material/Group";
+import PersonAddIcon from "@mui/icons-material/PersonAdd";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
+import PasswordIcon from "@mui/icons-material/Password";
+
+// Google Sans font
+const _gfont = (() => { const l = document.createElement("link"); l.rel="stylesheet"; l.href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700;800&display=swap"; document.head.appendChild(l); })();
 
 const drawerWidth = 240;
 
@@ -52,12 +60,13 @@ const MENU = [
   {label:"Attendance",   icon:<EventAvailableIcon/>},
   {label:"Efficiency",   icon:<EmojiEventsIcon/>},
   {label:"Announcements",icon:<AnnouncementIcon/>},
+  {label:"Faculty",      icon:<GroupsIcon/>},
   {label:"Password",     icon:<LockIcon/>},
 ];
 
 const getAuth = () => ({Authorization:`Bearer ${localStorage.getItem("token")}`});
 
-const FONT = "'Inter','Segoe UI','Helvetica Neue',sans-serif";
+const FONT = "'Google Sans','Roboto','Segoe UI',sans-serif";
 
 const S = {
   inp:{width:"100%",padding:"11px 14px",fontSize:"14px",borderRadius:"8px",
@@ -70,8 +79,42 @@ const S = {
         boxShadow:"0 4px 14px rgba(0,0,0,0.07)",fontFamily:FONT},
   th:{padding:"12px 16px",textAlign:"left",fontSize:"11px",fontFamily:FONT,
       letterSpacing:"0.6px",textTransform:"uppercase",fontWeight:700},
-  td:{padding:"12px 16px",fontFamily:FONT,fontSize:"13px"},
+  td:{padding:"12px 16px",fontFamily:FONT,fontSize:"13px",color:"#000"},
 };
+
+/* ── Sort helpers ── */
+const useSortState = () => {
+  const [sortCol, setSortCol] = React.useState(null);
+  const [sortDir, setSortDir] = React.useState("asc");
+  const toggle = col => {
+    if(sortCol===col) setSortDir(d=>d==="asc"?"desc":"asc");
+    else { setSortCol(col); setSortDir("asc"); }
+  };
+  const sort = (arr, keyFn) => {
+    if(!sortCol) return arr;
+    return [...arr].sort((a,b)=>{
+      const va = keyFn(a,sortCol), vb = keyFn(b,sortCol);
+      const n = typeof va==="number"&&typeof vb==="number" ? va-vb : String(va??'').localeCompare(String(vb??''));
+      return sortDir==="asc"?n:-n;
+    });
+  };
+  return {sortCol,sortDir,toggle,sort};
+};
+
+const SortTh = ({label, col, sortCol, sortDir, onToggle, style={}}) => (
+  <th onClick={()=>onToggle(col)} style={{
+    ...S.th, cursor:"pointer", userSelect:"none",
+    whiteSpace:"nowrap", position:"relative",
+    paddingRight:"28px", ...style
+  }}>
+    {label}
+    <span style={{position:"absolute",right:"8px",top:"50%",transform:"translateY(-50%)",
+      fontSize:"13px",opacity: sortCol===col ? 1 : 0.3,
+      color: sortCol===col ? "#93c5fd" : "#fff"}}>
+      {sortCol===col ? (sortDir==="asc"?"↑":"↓") : "↕"}
+    </span>
+  </th>
+);
 
 const bandColor = b =>
   b==="Excellent"?"#16a34a":b==="Good"?"#2563eb":
@@ -184,11 +227,24 @@ export default function AdminDashboard() {
   const [sEmail, setSEmail] = useState("");
   const [sRoll,  setSRoll]  = useState("");
   const [sPwd,   setSPwd]   = useState("");
+  const [sDept,  setSDept]  = useState("");
 
   /* subject form */
   const [subName,    setSubName]    = useState("");
   const [subCred,    setSubCred]    = useState("");
   const [subSem,     setSubSem]     = useState("Sem 1");
+
+  /* marks / attendance sem filter */
+  const [mSemFilter, setMSemFilter] = useState("All");
+  const [aSemFilter, setASemFilter] = useState("All");
+
+  /* sort states */
+  const studSort  = useSortState();
+  const markSort  = useSortState();
+  const attSort   = useSortState();
+  const facSort   = useSortState();
+  const subSort   = useSortState();
+  const effSort   = useSortState();
 
   /* marks — excel upload */
   const [xlRows,    setXlRows]    = useState([]);   /* parsed rows from excel */
@@ -196,6 +252,26 @@ export default function AdminDashboard() {
   const [xlLoading, setXlLoading] = useState(false);
   const [xlMsg,     setXlMsg]     = useState("");
   const [xlFileName,setXlFileName]= useState("");
+
+  /* faculty */
+  const [faculty,      setFaculty]      = useState([]);
+  const [fName,        setFName]        = useState("");
+  const [fEmail,       setFEmail]       = useState("");
+  const [fPwd,         setFPwd]         = useState("");
+  const [fMsg,         setFMsg]         = useState("");
+
+  /* student bulk upload */
+  const [bulkRows,     setBulkRows]     = useState([]);
+  const [bulkFileName, setBulkFileName] = useState("");
+  const [bulkLoading,  setBulkLoading]  = useState(false);
+  const [bulkMsg,      setBulkMsg]      = useState("");
+
+  /* admin reset student password */
+  const [resetRoll,    setResetRoll]    = useState("");
+  const [resetStud,    setResetStud]    = useState(null);
+  const [resetErr,     setResetErr]     = useState("");
+  const [resetPwd,     setResetPwd]     = useState("");
+  const [resetMsg,     setResetMsg]     = useState("");
 
   /* attendance — FIX #3: removed subject */
   const [aRoll,    setARoll]    = useState("");
@@ -235,6 +311,7 @@ export default function AdminDashboard() {
   const [newPwd,   setNewPwd]   = useState("");
   const [pwdMsg,   setPwdMsg]   = useState("");
 
+
   /* ── init ── */
   useEffect(() => {
     if (!localStorage.getItem("token")) { navigate("/"); return; }
@@ -253,6 +330,7 @@ export default function AdminDashboard() {
         doFetch("subjects",       setSubjects),
         doFetch("all-marks",      setMarks),
         doFetch("attendance-list",setAttendance),
+        doFetch("admin/faculty",  setFaculty),
         loadAnn(),
         loadAllEff(),
       ]);
@@ -324,9 +402,10 @@ export default function AdminDashboard() {
   /* ── students ── */
   const addStudent = async () => {
     if (!sName||!sRoll||!sEmail||!sPwd){alert("Fill all fields");return;}
-    const r=await fetch("http://localhost:5000/add-student",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({name:sName,rollno:sRoll,email:sEmail,password:sPwd})});
+    if(!sDept){alert("Select department");return;}
+    const r=await fetch("http://localhost:5000/add-student",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({name:sName,rollno:sRoll,email:sEmail,password:sPwd,department:sDept})});
     const d=await r.json(); if(!r.ok){alert(d.message);return;}
-    setSName("");setSRoll("");setSEmail("");setSPwd("");
+    setSName("");setSRoll("");setSEmail("");setSPwd("");setSDept("");
     doFetch("students",setStudents); alert("Student Added");
   };
   const delStudent = async id => {
@@ -480,6 +559,104 @@ export default function AdminDashboard() {
     setXlLoading(false);
     doFetch("all-marks", setMarks);
     loadAllEff();
+  };
+
+  /* ── faculty ── */
+  const addFaculty = async () => {
+    if(!fName||!fEmail||!fPwd){setFMsg("❌ Fill all fields");return;}
+    const r=await fetch("http://localhost:5000/admin/add-faculty",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({name:fName,email:fEmail,password:fPwd,department:userDept})});
+    const d=await r.json(); if(!r.ok){setFMsg("❌ "+d.message);return;}
+    setFMsg("✅ Faculty added"); setFName("");setFEmail("");setFPwd("");
+    doFetch("admin/faculty",setFaculty);
+  };
+  const delFaculty = async id => {
+    if(!window.confirm("Remove this faculty?"))return;
+    await fetch(`http://localhost:5000/admin/faculty/${id}`,{method:"DELETE",headers:getAuth()});
+    doFetch("admin/faculty",setFaculty);
+  };
+
+  /* ── bulk student upload ── */
+  const parseBulkExcel = async (file) => {
+    setBulkMsg(""); setBulkFileName(file.name);
+    const ext = file.name.split(".").pop().toLowerCase();
+    try {
+      let raw = [];
+      if (ext === "csv") {
+        const text = await file.text();
+        raw = text.split(/\r?\n/).map(l=>l.split(",").map(c=>c.trim().replace(/^"|"$/g,"")));
+      } else {
+        const XLSX = await import("https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs");
+        const buf  = await file.arrayBuffer();
+        const wb   = XLSX.read(buf,{type:"array"});
+        raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:""});
+      }
+      // skip header row if first cell is s.no / sno / name etc
+      const hdr = String(raw[0]?.[0]||"").toLowerCase();
+      const data = (hdr.includes("s") || hdr.includes("name") ? raw.slice(1) : raw)
+        .filter(r=>r.some(c=>c!==""));
+      const parsed = data.map((r,i)=>({
+        row:i+1,
+        name:    String(r[1]??r[0]??"").trim(),
+        rollno:  String(r[2]??r[1]??"").trim(),
+        email:   String(r[3]??r[2]??"").trim(),
+        password:String(r[4]??r[3]??"").trim(),
+        status:"pending", message:""
+      }));
+      setBulkRows(parsed);
+    } catch(e){ setBulkMsg("❌ Could not read file"); }
+  };
+
+  const submitBulk = async () => {
+    if(!bulkRows.length) return;
+    setBulkLoading(true); setBulkMsg("");
+    const payload = bulkRows.filter(r=>r.status!=="ok").map(r=>({
+      name:r.name, rollno:r.rollno, email:r.email, password:r.password
+    }));
+    try {
+      const r=await fetch("http://localhost:5000/admin/bulk-add-students",{
+        method:"POST",headers:{"Content-Type":"application/json",...getAuth()},
+        body:JSON.stringify({students:payload})
+      });
+      const d=await r.json();
+      const updated=[...bulkRows];
+      (d.results||[]).forEach((res,i)=>{
+        updated[i]={...updated[i], status:res.status, message:res.message};
+      });
+      setBulkRows(updated);
+      const ok=updated.filter(r=>r.status==="ok").length;
+      const err=updated.filter(r=>r.status==="error").length;
+      setBulkMsg(`✅ ${ok} added${err?` · ❌ ${err} failed`:""}`);
+      doFetch("students",setStudents);
+    } catch{ setBulkMsg("❌ Network error"); }
+    setBulkLoading(false);
+  };
+
+  /* ── reset student password ── */
+  const resetStudentPwd = async () => {
+    if(!resetStud||!resetPwd){setResetMsg("❌ Select student and enter new password");return;}
+    if(resetPwd.length<4){setResetMsg("❌ Min 4 characters");return;}
+    const r=await fetch(`http://localhost:5000/admin/reset-student-password/${resetStud.id}`,{
+      method:"PUT",headers:{"Content-Type":"application/json",...getAuth()},
+      body:JSON.stringify({new_password:resetPwd})
+    });
+    const d=await r.json();
+    if(!r.ok){setResetMsg("❌ "+d.message);return;}
+    setResetMsg("✅ Password reset for "+resetStud.name);
+    setResetPwd(""); setResetStud(null); setResetRoll(""); setResetErr("");
+  };
+
+  /* ── admin reset student password ── */
+  const resetStudentPassword = async () => {
+    if(!resetStud||!resetPwd){setResetMsg("❌ Select student and enter new password");return;}
+    if(resetPwd.length<4){setResetMsg("❌ Password must be at least 4 characters");return;}
+    const r=await fetch("http://localhost:5000/admin/reset-student-password",{
+      method:"PUT",headers:{"Content-Type":"application/json",...getAuth()},
+      body:JSON.stringify({student_id:resetStud.id,new_password:resetPwd})
+    });
+    const d=await r.json();
+    if(!r.ok){setResetMsg(`❌ ${d.message}`);return;}
+    setResetMsg("✅ Password reset successfully");
+    setResetRoll("");setResetStud(null);setResetPwd("");
   };
 
   const delMark = async id => {
@@ -675,7 +852,6 @@ export default function AdminDashboard() {
                 {[
                   {label:"Total Students",    value:students.length,  color:"#2563eb"},
                   {label:"Total Subjects",     value:subjects.length,  color:"#16a34a"},
-                  {label:"Marks Entries",      value:marks.length,     color:"#d97706"},
                   {label:"Avg Efficiency",     value:avgEff,           color:"#7c3aed"},
                 ].map(({label,value,color})=>(
                   <Box key={label} sx={{flex:"1 1 160px",...S.card,textAlign:"center",borderTop:`4px solid ${color}`}}>
@@ -699,13 +875,20 @@ export default function AdminDashboard() {
                 <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"'Inter','Segoe UI',sans-serif"}}>
                   <thead>
                     <tr style={{background:"linear-gradient(90deg,#1e293b,#0f172a)",color:"#fff"}}>
-                      {["#","Student","Roll No","CGPA","Att %","Score /100","Band","Dept Rank","Overall Rank",""].map(h=>(
-                        <th key={h} style={{...S.th,whiteSpace:"nowrap",borderBottom:"2px solid #334155",color:"#94a3b8",padding:"10px 12px"}}>{h}</th>
-                      ))}
+                      <th style={{...S.th,whiteSpace:"nowrap",borderBottom:"2px solid #334155",color:"#94a3b8",padding:"10px 12px"}}>#</th>
+                      <SortTh label="Student"  col="name"       sortCol={effSort.sortCol} sortDir={effSort.sortDir} onToggle={effSort.toggle} style={{whiteSpace:"nowrap",borderBottom:"2px solid #334155",color:"#94a3b8",padding:"10px 12px"}}/>
+                      <SortTh label="Roll No"  col="rollno"     sortCol={effSort.sortCol} sortDir={effSort.sortDir} onToggle={effSort.toggle} style={{whiteSpace:"nowrap",borderBottom:"2px solid #334155",color:"#94a3b8",padding:"10px 12px"}}/>
+                      <SortTh label="CGPA"     col="cgpa"       sortCol={effSort.sortCol} sortDir={effSort.sortDir} onToggle={effSort.toggle} style={{whiteSpace:"nowrap",borderBottom:"2px solid #334155",color:"#94a3b8",padding:"10px 12px"}}/>
+                      <th style={{...S.th,whiteSpace:"nowrap",borderBottom:"2px solid #334155",color:"#94a3b8",padding:"10px 12px"}}>Att %</th>
+                      <SortTh label="Score /100" col="finalScore" sortCol={effSort.sortCol} sortDir={effSort.sortDir} onToggle={effSort.toggle} style={{whiteSpace:"nowrap",borderBottom:"2px solid #334155",color:"#94a3b8",padding:"10px 12px"}}/>
+                      <th style={{...S.th,whiteSpace:"nowrap",borderBottom:"2px solid #334155",color:"#94a3b8",padding:"10px 12px"}}>Band</th>
+                      <SortTh label="Dept Rank"    col="deptRank"    sortCol={effSort.sortCol} sortDir={effSort.sortDir} onToggle={effSort.toggle} style={{whiteSpace:"nowrap",borderBottom:"2px solid #334155",color:"#94a3b8",padding:"10px 12px"}}/>
+                      <SortTh label="Overall Rank" col="overallRank" sortCol={effSort.sortCol} sortDir={effSort.sortDir} onToggle={effSort.toggle} style={{whiteSpace:"nowrap",borderBottom:"2px solid #334155",color:"#94a3b8",padding:"10px 12px"}}/>
+                      <th style={{...S.th,whiteSpace:"nowrap",borderBottom:"2px solid #334155",color:"#94a3b8",padding:"10px 12px"}}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {allEff.map((e,i)=>{
+                    {effSort.sort(allEff,(r,c)=>r[c]).map((e,i)=>{
                       const bc = bandColor(e.band);
                       const pctColor = p => p>=75?"#16a34a":p>=50?"#2563eb":"#dc2626";
                       const pctBg    = p => p>=75?"#dcfce7":p>=50?"#dbeafe":"#fee2e2";
@@ -819,33 +1002,253 @@ export default function AdminDashboard() {
           {/* ══════════════════ STUDENTS */}
           {tab==="Students" && (
             <Box>
-              <Typography variant="h5" sx={{fontWeight:700,mb:3}}>Add Student</Typography>
-              <Box sx={{...S.card,maxWidth:480,mb:4}}>
-                <input style={S.inp} placeholder="Name"        value={sName}  onChange={e=>setSName(e.target.value)}/>
-                <input style={S.inp} placeholder="Email"       value={sEmail} onChange={e=>setSEmail(e.target.value)}/>
-                <input style={S.inp} placeholder="Roll Number" value={sRoll}  onChange={e=>setSRoll(e.target.value)}/>
-                <input style={S.inp} type="password" placeholder="Password" value={sPwd} onChange={e=>setSPwd(e.target.value)}/>
-                <button style={S.btn} onClick={addStudent}>Add Student</button>
+              <Typography variant="h5" sx={{fontWeight:700,mb:3}}>Students</Typography>
+
+              {/* Two-column: manual add + bulk upload */}
+              <Box sx={{display:"flex",gap:3,flexWrap:"wrap",alignItems:"flex-start",mb:4}}>
+
+                {/* Manual Add */}
+                <Box sx={{flex:"0 0 320px",...S.card}}>
+                  <Typography sx={{fontWeight:700,fontSize:"15px",mb:2,color:"#0f172a"}}>➕ Add Single Student</Typography>
+                  <input style={S.inp} placeholder="Full Name"    value={sName}  onChange={e=>setSName(e.target.value)}/>
+                  <input style={S.inp} placeholder="Email"        value={sEmail} onChange={e=>setSEmail(e.target.value)}/>
+                  <input style={S.inp} placeholder="Roll Number"  value={sRoll}  onChange={e=>setSRoll(e.target.value)}/>
+                  <input style={S.inp} type="password" placeholder="Password" value={sPwd} onChange={e=>setSPwd(e.target.value)}/>
+                  <select style={S.inp} value={sDept} onChange={e=>setSDept(e.target.value)}>
+                    <option value="">Select Department</option>
+                    {[userDept,...(userDept?"":["Mechanical","CSE","ECE","Civil","IT","EEE"])].filter(Boolean).map(d=>(
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                  <button style={S.btn} onClick={addStudent}>Add Student</button>
+                  <button onClick={()=>{
+                    const csv = "S.No,Name,Roll_No,Mail_ID,Password\n1,Aarav Kumar,7376231ME101,aarav@mail.com,pass123\n";
+                    const a = document.createElement("a");
+                    a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
+                    a.download = "students_template.csv";
+                    a.click();
+                  }} style={{width:"100%",marginTop:"8px",padding:"10px",
+                    background:"linear-gradient(90deg,#0891b2,#0e7490)",color:"#fff",
+                    border:"none",borderRadius:"8px",cursor:"pointer",fontSize:"13px",
+                    fontWeight:600,fontFamily:FONT}}>
+                    ⬇️ Download Template (.csv)
+                  </button>
+                </Box>
+
+                {/* Bulk Upload */}
+                <Box sx={{flex:"1 1 360px",...S.card,border:"2px dashed #cbd5e1"}}>
+                  <Typography sx={{fontWeight:700,fontSize:"15px",mb:1,color:"#0f172a"}}>📊 Bulk Upload via Excel / CSV</Typography>
+                  <Typography sx={{fontSize:"12px",color:"#64748b",mb:2}}>
+                    Required columns: <strong>S.No · Name · Roll_No · Mail_ID · Password</strong>
+                  </Typography>
+
+                  {/* Format preview */}
+                  <Box sx={{...S.card,p:0,overflow:"hidden",mb:2,border:"1px solid #e2e8f0"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12px"}}>
+                      <thead>
+                        <tr style={{background:"#1e293b"}}>
+                          {["S.No","Name","Roll_No","Mail_ID","Password"].map(h=>(
+                            <th key={h} style={{...S.th,color:"#94a3b8",padding:"7px 10px",fontSize:"10px"}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr style={{background:"#f8fafc"}}>
+                          <td style={{...S.td,padding:"6px 10px",color:"#94a3b8"}}>1</td>
+                          <td style={{...S.td,padding:"6px 10px",fontFamily:"monospace"}}>Aarav Kumar</td>
+                          <td style={{...S.td,padding:"6px 10px",fontFamily:"monospace"}}>7376231ME101</td>
+                          <td style={{...S.td,padding:"6px 10px",fontFamily:"monospace"}}>aarav@mail.com</td>
+                          <td style={{...S.td,padding:"6px 10px",fontFamily:"monospace"}}>pass123</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </Box>
+
+                  <label style={{display:"block",cursor:"pointer",marginBottom:"10px"}}>
+                    <Box sx={{border:"2px dashed #94a3b8",borderRadius:"10px",p:"16px",textAlign:"center",background:"#f8fafc"}}>
+                      <Typography sx={{fontSize:"28px",mb:0.5}}>👥</Typography>
+                      <Typography sx={{fontWeight:600,fontSize:"13px",color:"#1e293b",mb:0.3}}>
+                        {bulkFileName || "Click to choose file"}
+                      </Typography>
+                      <Typography sx={{fontSize:"11px",color:"#64748b"}}>
+                        {bulkFileName ? "File selected ✓" : ".csv · .xlsx · .xls"}
+                      </Typography>
+                    </Box>
+                    <input type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}}
+                      onChange={e=>{if(e.target.files[0])parseBulkExcel(e.target.files[0]);e.target.value="";}}/>
+                  </label>
+
+                  {bulkRows.length > 0 && (
+                    <button style={{...S.btn,opacity:bulkLoading?0.6:1,marginBottom:"8px"}}
+                      disabled={bulkLoading} onClick={submitBulk}>
+                      {bulkLoading?"⏳ Uploading...": `⬆️ Add ${bulkRows.filter(r=>r.status!=="ok").length} Students`}
+                    </button>
+                  )}
+                  {bulkRows.length > 0 && !bulkLoading && (
+                    <button onClick={()=>{setBulkRows([]);setBulkMsg("");setBulkFileName("");}}
+                      style={{width:"100%",padding:"9px",background:"#f1f5f9",border:"1px solid #e2e8f0",
+                        borderRadius:"8px",cursor:"pointer",fontSize:"13px",fontWeight:600,color:"#64748b"}}>
+                      🗑 Clear
+                    </button>
+                  )}
+                  {bulkMsg && (
+                    <Box sx={{mt:1.5,p:"10px 14px",borderRadius:"8px",fontSize:"13px",fontWeight:600,
+                      background:bulkMsg.startsWith("✅")?"#f0fdf4":"#fef2f2",
+                      border:bulkMsg.startsWith("✅")?"1px solid #86efac":"1px solid #fca5a5",
+                      color:bulkMsg.startsWith("✅")?"#16a34a":"#dc2626"}}>
+                      {bulkMsg}
+                    </Box>
+                  )}
+
+                  {/* Bulk preview */}
+                  {bulkRows.length > 0 && (
+                    <Box sx={{mt:2,...S.card,p:0,overflow:"hidden",border:"1px solid #e2e8f0"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12px"}}>
+                        <thead>
+                          <tr style={{background:"#1e293b"}}>
+                            {["#","Name","Roll No","Email","Status"].map(h=>(
+                              <th key={h} style={{...S.th,color:"#94a3b8",padding:"8px 10px",fontSize:"10px"}}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {bulkRows.map((r,i)=>(
+                            <tr key={i} style={{borderBottom:"1px solid #f1f5f9",
+                              background:r.status==="ok"?"#f0fdf4":r.status==="error"?"#fef2f2":"transparent"}}>
+                              <td style={{...S.td,padding:"7px 10px",color:"#94a3b8"}}>{r.row}</td>
+                              <td style={{...S.td,padding:"7px 10px",fontWeight:500}}>{r.name||"—"}</td>
+                              <td style={{...S.td,padding:"7px 10px",fontFamily:"monospace",fontSize:"11px"}}>{r.rollno||"—"}</td>
+                              <td style={{...S.td,padding:"7px 10px",fontSize:"11px",color:"#475569"}}>{r.email||"—"}</td>
+                              <td style={{...S.td,padding:"7px 10px"}}>
+                                {r.status==="ok"  && <span style={{color:"#16a34a",fontWeight:700,fontSize:"11px"}}>✅ Added</span>}
+                                {r.status==="pending" && <span style={{color:"#94a3b8",fontSize:"11px"}}>⏳ Pending</span>}
+                                {r.status==="error" && (
+                                  <span style={{color:"#dc2626",fontWeight:600,fontSize:"11px"}}>❌ {r.message}</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </Box>
+                  )}
+                </Box>
               </Box>
+
               <Typography variant="h6" sx={{fontWeight:700,mb:2}}>All Students ({students.length})</Typography>
               <Box sx={{...S.card,p:0,overflowX:"auto",mb:4}}>
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
                   <thead><tr style={{background:"#1e293b",color:"#fff"}}>
-                    {["#","Name","Roll No","Email","Action"].map(h=><th key={h} style={S.th}>{h}</th>)}
+                    <th style={S.th}>#</th>
+                    <SortTh label="Name"    col="name"   sortCol={studSort.sortCol} sortDir={studSort.sortDir} onToggle={studSort.toggle}/>
+                    <SortTh label="Roll No" col="rollno" sortCol={studSort.sortCol} sortDir={studSort.sortDir} onToggle={studSort.toggle}/>
+                    <SortTh label="Email"   col="email"  sortCol={studSort.sortCol} sortDir={studSort.sortDir} onToggle={studSort.toggle}/>
+                    <th style={S.th}>Action</th>
                   </tr></thead>
                   <tbody>
-                    {students.map((s,i)=>(
+                    {studSort.sort(students,(r,c)=>r[c]).map((s,i)=>(
                       <tr key={s.id} style={{borderBottom:"1px solid #f1f5f9"}}>
                         <td style={{...S.td,color:"#94a3b8"}}>{i+1}</td>
                         <td style={{...S.td,fontWeight:500}}>{s.name}</td>
                         <td style={{...S.td,fontFamily:"monospace"}}>{s.rollno}</td>
-                        <td style={{...S.td,color:"#475569"}}>{s.email}</td>
+                        <td style={{...S.td}}>{s.email}</td>
                         <td style={S.td}><IconButton size="small" sx={{color:"#ef4444"}} onClick={()=>delStudent(s.id)}><DeleteIcon fontSize="small"/></IconButton></td>
                       </tr>
                     ))}
                     {students.length===0&&<tr><td colSpan={5} style={{...S.td,textAlign:"center",color:"#94a3b8",padding:"20px"}}>No students yet</td></tr>}
                   </tbody>
                 </table>
+              </Box>
+            </Box>
+          )}
+
+          {/* ══════════════════ FACULTY */}
+          {tab==="Faculty" && (
+            <Box>
+              <Typography variant="h5" sx={{fontWeight:700,mb:3}}>Faculty Management</Typography>
+              <MsgBox msg={fMsg}/>
+
+              <Box sx={{display:"flex",gap:3,flexWrap:"wrap",alignItems:"flex-start",mb:4}}>
+
+                {/* Add Faculty form */}
+                <Box sx={{flex:"0 0 320px",...S.card}}>
+                  <Typography sx={{fontWeight:700,fontSize:"15px",mb:2,color:"#0f172a"}}>➕ Add Faculty Member</Typography>
+                  <input style={S.inp} placeholder="Full Name"   value={fName}  onChange={e=>{setFName(e.target.value);setFMsg("");}}/>
+                  <input style={S.inp} placeholder="Email / Login ID" value={fEmail} onChange={e=>{setFEmail(e.target.value);setFMsg("");}}/>
+                  <input style={S.inp} type="password" placeholder="Password" value={fPwd} onChange={e=>{setFPwd(e.target.value);setFMsg("");}}/>
+
+                  {/* Read-only department */}
+                  <Box sx={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:"8px",
+                    p:"11px 14px",mb:2,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <Typography sx={{fontSize:"13px",color:"#64748b"}}>Department</Typography>
+                    <span style={{background:"#2563eb",color:"#fff",padding:"3px 12px",
+                      borderRadius:"999px",fontSize:"12px",fontWeight:600}}>{userDept}</span>
+                  </Box>
+
+                  <button style={S.btn} onClick={addFaculty}>Add Faculty</button>
+
+                  {/* Permissions info card */}
+                  <Box sx={{mt:2,background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:"8px",p:"10px 14px"}}>
+                    <Typography sx={{fontWeight:700,fontSize:"12px",color:"#166534",mb:0.8}}>✅ Faculty Can</Typography>
+                    <Typography sx={{fontSize:"11px",color:"#166534",lineHeight:1.8}}>
+                      • View students in {userDept} dept<br/>
+                      • Guide and monitor students<br/>
+                      • View academic performance
+                    </Typography>
+                  </Box>
+                  <Box sx={{mt:1.5,background:"#fef2f2",border:"1px solid #fecaca",borderRadius:"8px",p:"10px 14px"}}>
+                    <Typography sx={{fontWeight:700,fontSize:"12px",color:"#991b1b",mb:0.8}}>❌ Faculty Cannot</Typography>
+                    <Typography sx={{fontSize:"11px",color:"#7f1d1d",lineHeight:1.8}}>
+                      • Add or edit marks / subjects<br/>
+                      • Modify attendance records<br/>
+                      • Manage other users<br/>
+                      • Change system settings
+                    </Typography>
+                  </Box>
+                </Box>
+
+                {/* Faculty list */}
+                <Box sx={{flex:"1 1 380px"}}>
+                  <Typography variant="h6" sx={{fontWeight:700,mb:2}}>Faculty in {userDept} Dept ({faculty.length})</Typography>
+                  <Box sx={{...S.card,p:0,overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse"}}>
+                      <thead>
+                        <tr style={{background:"#1e293b",color:"#fff"}}>
+                          <th style={S.th}>#</th>
+                          <SortTh label="Name"  col="name"  sortCol={facSort.sortCol} sortDir={facSort.sortDir} onToggle={facSort.toggle}/>
+                          <SortTh label="Email" col="email" sortCol={facSort.sortCol} sortDir={facSort.sortDir} onToggle={facSort.toggle}/>
+                          <th style={S.th}>Department</th>
+                          <th style={S.th}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {facSort.sort(faculty,(r,c)=>r[c]).map((f,i)=>(
+                          <tr key={f.id} style={{borderBottom:"1px solid #f1f5f9"}}
+                            onMouseEnter={ev=>ev.currentTarget.style.background="#f8fafc"}
+                            onMouseLeave={ev=>ev.currentTarget.style.background="transparent"}>
+                            <td style={{...S.td,color:"#94a3b8"}}>{i+1}</td>
+                            <td style={{...S.td,fontWeight:600}}>{f.name}</td>
+                            <td style={S.td}>{f.email}</td>
+                            <td style={S.td}>
+                              <span style={{background:"#dbeafe",color:"#1d4ed8",padding:"3px 10px",
+                                borderRadius:"999px",fontSize:"12px",fontWeight:600}}>{f.department}</span>
+                            </td>
+                            <td style={S.td}>
+                              <IconButton size="small" sx={{color:"#ef4444"}} onClick={()=>delFaculty(f.id)}>
+                                <DeleteIcon fontSize="small"/>
+                              </IconButton>
+                            </td>
+                          </tr>
+                        ))}
+                        {faculty.length===0 && (
+                          <tr><td colSpan={5} style={{...S.td,textAlign:"center",color:"#94a3b8",padding:"28px",fontSize:"13px"}}>
+                            No faculty members added yet
+                          </td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </Box>
+                </Box>
               </Box>
             </Box>
           )}
@@ -884,10 +1287,15 @@ export default function AdminDashboard() {
               <Box sx={{...S.card,p:0,overflowX:"auto",mb:4}}>
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
                   <thead><tr style={{background:"#1e293b",color:"#fff"}}>
-                    {["#","Subject","Semester","Credits","Department","Action"].map(h=><th key={h} style={S.th}>{h}</th>)}
+                    <th style={S.th}>#</th>
+                    <SortTh label="Subject"    col="subject_name" sortCol={subSort.sortCol} sortDir={subSort.sortDir} onToggle={subSort.toggle}/>
+                    <SortTh label="Semester"   col="semester"     sortCol={subSort.sortCol} sortDir={subSort.sortDir} onToggle={subSort.toggle}/>
+                    <SortTh label="Credits"    col="credits"      sortCol={subSort.sortCol} sortDir={subSort.sortDir} onToggle={subSort.toggle}/>
+                    <th style={S.th}>Department</th>
+                    <th style={S.th}>Action</th>
                   </tr></thead>
                   <tbody>
-                    {subsBySem.map((s,i)=>(
+                    {subSort.sort(subsBySem,(r,c)=>r[c]).map((s,i)=>(
                       <tr key={s.id} style={{borderBottom:"1px solid #f1f5f9"}}>
                         <td style={{...S.td,color:"#94a3b8"}}>{i+1}</td>
                         <td style={{...S.td,fontWeight:500}}>{s.subject_name}</td>
@@ -998,17 +1406,14 @@ export default function AdminDashboard() {
                             <td style={{...S.td,padding:"8px 12px",fontWeight:700,color:"#d97706"}}>subject</td>
                             <td style={{...S.td,padding:"8px 12px",fontWeight:700,color:"#16a34a"}}>marks</td>
                           </tr>
-                          
+
                         </tbody>
                       </table>
                     </Box>
 
-            
-                    
-
                     {/* Download template button */}
                     <button onClick={()=>{
-                      const csv = "roll_no,semester,subject,marks\n7376231ME161,Sem 3,Subject Name,87\n";
+                      const csv = "roll_no,semester,subject,marks\nYOUR_ROLL_NO,Sem 1,Subject Name,85\n";
                       const a = document.createElement("a");
                       a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
                       a.download = "marks_template.csv";
@@ -1054,13 +1459,16 @@ export default function AdminDashboard() {
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:"13px"}}>
                       <thead>
                         <tr style={{background:"#1e293b",color:"#fff"}}>
-                          {["#","Roll No","Semester","Subject","Marks","Status"].map(h=>(
-                            <th key={h} style={{...S.th,color:"#94a3b8",padding:"10px 14px"}}>{h}</th>
-                          ))}
+                          <th style={{...S.th,color:"#94a3b8",padding:"10px 14px"}}>#</th>
+                          <SortTh label="Roll No"  col="roll_no"   sortCol={markSort.sortCol} sortDir={markSort.sortDir} onToggle={markSort.toggle} style={{color:"#94a3b8",padding:"10px 14px"}}/>
+                          <SortTh label="Semester" col="semester"  sortCol={markSort.sortCol} sortDir={markSort.sortDir} onToggle={markSort.toggle} style={{color:"#94a3b8",padding:"10px 14px"}}/>
+                          <SortTh label="Subject"  col="subject"   sortCol={markSort.sortCol} sortDir={markSort.sortDir} onToggle={markSort.toggle} style={{color:"#94a3b8",padding:"10px 14px"}}/>
+                          <SortTh label="Marks"    col="marks"     sortCol={markSort.sortCol} sortDir={markSort.sortDir} onToggle={markSort.toggle} style={{color:"#94a3b8",padding:"10px 14px"}}/>
+                          <th style={{...S.th,color:"#94a3b8",padding:"10px 14px"}}>Status</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {xlRows.map((row,i)=>{
+                        {markSort.sort(xlRows,(r,c)=>r[c]).map((row,i)=>{
                           const statusColor = row.status==="ok"?"#16a34a":row.status==="error"?"#dc2626":"#64748b";
                           const statusBg    = row.status==="ok"?"#f0fdf4":row.status==="error"?"#fef2f2":"#f8fafc";
                           return (
@@ -1097,31 +1505,6 @@ export default function AdminDashboard() {
                 </Box>
               )}
 
-              {/* Existing marks table */}
-              <Typography variant="h6" sx={{fontWeight:700,mb:2}}>All Marks ({marks.length})</Typography>
-              <Box sx={{...S.card,p:0,overflowX:"auto",mb:4}}>
-                <table style={{width:"100%",borderCollapse:"collapse"}}>
-                  <thead><tr style={{background:"#1e293b",color:"#fff"}}>
-                    {["#","Student","Subject","Sem","Marks","Grade","Pts","Credits","Del"].map(h=><th key={h} style={S.th}>{h}</th>)}
-                  </tr></thead>
-                  <tbody>
-                    {marks.map((m,i)=>(
-                      <tr key={m.id} style={{borderBottom:"1px solid #f1f5f9"}}>
-                        <td style={{...S.td,color:"#94a3b8"}}>{i+1}</td>
-                        <td style={{...S.td,fontWeight:500}}>{m.student_name}</td>
-                        <td style={S.td}>{m.subject_name}</td>
-                        <td style={S.td}>{m.semester}</td>
-                        <td style={S.td}>{m.marks_scored}</td>
-                        <td style={S.td}><span style={{background:(GRADE_COLOR[m.grade]||"#64748b")+"20",color:GRADE_COLOR[m.grade]||"#64748b",padding:"2px 10px",borderRadius:"20px",fontWeight:700}}>{m.grade}</span></td>
-                        <td style={S.td}>{m.grade_points}</td>
-                        <td style={S.td}>{m.credits}</td>
-                        <td style={S.td}><IconButton size="small" sx={{color:"#ef4444"}} onClick={()=>delMark(m.id)}><DeleteIcon fontSize="small"/></IconButton></td>
-                      </tr>
-                    ))}
-                    {marks.length===0&&<tr><td colSpan={9} style={{...S.td,textAlign:"center",color:"#94a3b8",padding:"24px"}}>No marks yet</td></tr>}
-                  </tbody>
-                </table>
-              </Box>
             </Box>
           )}
 
@@ -1167,14 +1550,43 @@ export default function AdminDashboard() {
                 <button style={{...S.btn,opacity:aStud?1:0.5}} onClick={addAtt} disabled={!aStud}>Save Attendance</button>
               </Box>
 
-              <Typography variant="h6" sx={{fontWeight:700,mb:2}}>Records ({attendance.length})</Typography>
+              {/* Attendance sem filter pills */}
+              <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"16px"}}>
+                {["All",...SEMESTERS].map(sem=>{
+                  const cnt = sem==="All" ? attendance.length : attendance.filter(a=>a.semester===sem).length;
+                  return (
+                    <button key={sem} onClick={()=>setASemFilter(sem)} style={{
+                      padding:"7px 16px",borderRadius:"20px",border:"none",cursor:"pointer",
+                      fontWeight:600,fontSize:"12px",transition:"all 0.2s",
+                      background:aSemFilter===sem?"linear-gradient(90deg,#1e3c72,#2a5298)":"#fff",
+                      color:aSemFilter===sem?"#fff":"#475569",
+                      boxShadow:"0 2px 8px rgba(0,0,0,0.07)",
+                    }}>
+                      {sem} <span style={{opacity:0.7,fontSize:"11px"}}>({cnt})</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <Typography variant="h6" sx={{fontWeight:700,mb:2}}>
+                Records — {aSemFilter==="All"?"All Semesters":aSemFilter} ({aSemFilter==="All"?attendance.length:attendance.filter(a=>a.semester===aSemFilter).length})
+              </Typography>
               <Box sx={{...S.card,p:0,overflowX:"auto",mb:4}}>
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
                   <thead><tr style={{background:"#1e293b",color:"#fff"}}>
-                    {["#","Student","Semester","Completed Days","Total Days","Efficiency %"].map(h=><th key={h} style={S.th}>{h}</th>)}
+                    <th style={S.th}>#</th>
+                    <SortTh label="Student"    col="student_name"          sortCol={attSort.sortCol} sortDir={attSort.sortDir} onToggle={attSort.toggle}/>
+                    <SortTh label="Semester"   col="semester"              sortCol={attSort.sortCol} sortDir={attSort.sortDir} onToggle={attSort.toggle}/>
+                    <SortTh label="Completed"  col="present_days"          sortCol={attSort.sortCol} sortDir={attSort.sortDir} onToggle={attSort.toggle}/>
+                    <SortTh label="Total Days" col="total_days"            sortCol={attSort.sortCol} sortDir={attSort.sortDir} onToggle={attSort.toggle}/>
+                    <SortTh label="Efficiency %" col="attendance_percentage" sortCol={attSort.sortCol} sortDir={attSort.sortDir} onToggle={attSort.toggle}/>
                   </tr></thead>
                   <tbody>
-                    {attendance.map((a,i)=>{
+                    {attSort.sort(
+                      (aSemFilter==="All"?attendance:attendance.filter(a=>a.semester===aSemFilter)),
+                      (r,c)=>c==="attendance_percentage"
+                        ?(r.present_days!=null&&r.total_days>0?r.present_days/r.total_days:Number(r.attendance_percentage||0))
+                        :r[c]
+                    ).map((a,i)=>{
                       const pct=a.present_days!=null&&a.total_days>0
                         ?((a.present_days/a.total_days)*100).toFixed(1)
                         :Number(a.attendance_percentage||0).toFixed(1);
@@ -1189,7 +1601,7 @@ export default function AdminDashboard() {
                         </tr>
                       );
                     })}
-                    {attendance.length===0&&<tr><td colSpan={6} style={{...S.td,textAlign:"center",color:"#94a3b8",padding:"24px"}}>No records yet</td></tr>}
+                    {(aSemFilter==="All"?attendance:attendance.filter(a=>a.semester===aSemFilter)).length===0&&<tr><td colSpan={6} style={{...S.td,textAlign:"center",color:"#94a3b8",padding:"24px"}}>No records for {aSemFilter}</td></tr>}
                   </tbody>
                 </table>
               </Box>
@@ -1571,12 +1983,41 @@ export default function AdminDashboard() {
           {/* ══════════════════ CHANGE PASSWORD — FIX #6 */}
           {tab==="Password" && (
             <Box>
-              <Typography variant="h5" sx={{fontWeight:700,mb:3}}>Change Password</Typography>
-              <Box sx={{...S.card,maxWidth:420}}>
-                <MsgBox msg={pwdMsg}/>
-                <input style={S.inp} type="password" placeholder="Current Password" value={curPwd} onChange={e=>{setCurPwd(e.target.value);setPwdMsg("");}}/>
-                <input style={S.inp} type="password" placeholder="New Password (min 4 chars)" value={newPwd} onChange={e=>{setNewPwd(e.target.value);setPwdMsg("");}}/>
-                <button style={S.btn} onClick={changePassword}>Update Password</button>
+              <Typography variant="h5" sx={{fontWeight:700,mb:3}}>Password Management</Typography>
+
+              <Box sx={{display:"flex",gap:3,flexWrap:"wrap",alignItems:"flex-start"}}>
+
+                {/* Change own password */}
+                <Box sx={{flex:"0 0 360px",...S.card,borderTop:"4px solid #2563eb"}}>
+                  <Typography sx={{fontWeight:700,fontSize:"15px",mb:0.5,color:"#1e293b"}}>🔒 Change My Password</Typography>
+                  <Typography sx={{fontSize:"12px",color:"#64748b",mb:2}}>Update your own admin login password</Typography>
+                  <MsgBox msg={pwdMsg}/>
+                  <input style={S.inp} type="password" placeholder="Current Password"
+                    value={curPwd} onChange={e=>{setCurPwd(e.target.value);setPwdMsg("");}}/>
+                  <input style={S.inp} type="password" placeholder="New Password (min 4 chars)"
+                    value={newPwd} onChange={e=>{setNewPwd(e.target.value);setPwdMsg("");}}/>
+                  <button style={S.btn} onClick={changePassword}>Update Password</button>
+                </Box>
+
+                {/* Reset student password */}
+                <Box sx={{flex:"0 0 360px",...S.card,borderTop:"4px solid #d97706"}}>
+                  <Typography sx={{fontWeight:700,fontSize:"15px",mb:0.5,color:"#1e293b"}}>🔑 Reset Student Password</Typography>
+                  <Typography sx={{fontSize:"12px",color:"#64748b",mb:2}}>Reset password for any student in your department</Typography>
+                  <MsgBox msg={resetMsg}/>
+                  <RollInput value={resetRoll}
+                    onChange={v=>rollChange(v,setResetRoll,setResetStud,setResetErr)}
+                    onSelect={s=>pickStud(s,setResetStud,setResetErr,setResetRoll)}
+                    pool={students}/>
+                  <FoundBanner student={resetStud} error={resetErr}/>
+                  <input style={S.inp} type="password" placeholder="New Password for Student (min 4 chars)"
+                    value={resetPwd} onChange={e=>{setResetPwd(e.target.value);setResetMsg("");}}/>
+                  <button style={{...S.btn,background:"linear-gradient(90deg,#d97706,#b45309)",
+                    opacity:resetStud?1:0.5}} disabled={!resetStud}
+                    onClick={resetStudentPassword}>
+                    Reset Student Password
+                  </button>
+                </Box>
+
               </Box>
             </Box>
           )}

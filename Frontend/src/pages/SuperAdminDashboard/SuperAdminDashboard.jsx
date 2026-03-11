@@ -423,7 +423,7 @@ export default function SuperAdminDashboard() {
     { label: "Departments",   icon: <ApartmentIcon />    },
     { label: "AddAdmin",      icon: <PeopleIcon />,       display: "Add Admin" },
     { label: "Announcements", icon: <AnnouncementIcon /> },
-    { label: "MarksReport",   icon: <BarChartIcon />,     display: "Marks Report" }, // ✅ NEW
+   
   ];
 
   const sidebarItemStyle = (item) => ({
@@ -460,7 +460,7 @@ export default function SuperAdminDashboard() {
               sx={{ mr: 2, ...(open && { display: "none" }) }}>
               <MenuIcon />
             </IconButton>
-            <Typography variant="h6" sx={{ flexGrow: 1 }}>Administrative Dashboard</Typography>
+            <Typography variant="h6" sx={{ flexGrow: 1 }}>Super Admin Dashboard</Typography>
           </Toolbar>
         </AppBar>
 
@@ -523,19 +523,14 @@ export default function SuperAdminDashboard() {
           {/* ════ DASHBOARD ════ */}
           {selectedItem === "Dashboard" && (
             <Box>
-              <Typography variant="h4" sx={{ fontWeight: "bold", mb: 3 }}>Welcome, Superadmin </Typography>
+              <Typography variant="h4" sx={{ fontWeight: "bold", mb: 3 }}>Welcome, Super Admin 👋</Typography>
 
               {/* Top stat cards */}
               <div style={{ display: "flex", gap: "20px", marginBottom: "30px", flexWrap: "wrap" }}>
                 <StatCard label="Total Students"      value={stats.totalStudents} color="#2563eb" />
                 <StatCard label="Total Admins"        value={stats.totalAdmins}   color="#d97706" />
                 {/* ✅ CLICKABLE: Total Marks Entries → goes to Marks Report */}
-                <StatCard
-                  label="Total Marks Entries"
-                  value={stats.totalMarks}
-                  color="#16a34a"
-                  onClick={() => setSelectedItem("MarksReport")}
-                />
+
               </div>
 
               {/* ✅ NEW: Student count per department */}
@@ -580,36 +575,6 @@ export default function SuperAdminDashboard() {
                   </div>
                 ) : (
                   <p style={{ color: "#94a3b8" }}>No admin data yet.</p>
-                )}
-              </div>
-              {/* FIX #10: Total Marks Entries — count 1 per student per semester */}
-              <div style={{ background: "#fff", borderRadius: "12px", padding: "24px", boxShadow: "0 4px 14px rgba(0,0,0,0.08)", marginBottom: "24px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700 }}>Total Marks Entries</Typography>
-                  <div style={{ background: "#16a34a20", border: "1px solid #16a34a", borderRadius: "10px", padding: "8px 20px", textAlign: "center" }}>
-                    <p style={{ fontSize: "11px", color: "#16a34a", fontWeight: 600 }}>TOTAL</p>
-                    <p style={{ fontSize: "24px", fontWeight: 800, color: "#16a34a" }}>{marksEntries.total}</p>
-                  </div>
-                </div>
-                <p style={{ fontSize: "12px", color: "#94a3b8", marginBottom: "14px" }}>
-                  Counted as 1 entry per student per semester (regardless of how many subjects)
-                </p>
-                {marksEntries.byDept.length > 0 ? (
-                  <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-                    {marksEntries.byDept.map((d) => (
-                      <div key={d.department} style={{
-                        padding: "14px 22px", borderRadius: "10px", background: "#f8fafc",
-                        border: `2px solid ${getDeptColor(d.department, departments)}`,
-                        textAlign: "center", minWidth: "110px",
-                      }}>
-                        <p style={{ fontWeight: 700, color: getDeptColor(d.department, departments), fontSize: "26px" }}>{d.count}</p>
-                        <p style={{ color: "#475569", fontSize: "12px", marginTop: "4px" }}>{d.department}</p>
-                        <p style={{ color: "#94a3b8", fontSize: "10px" }}>entries</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p style={{ color: "#94a3b8" }}>No marks data yet.</p>
                 )}
               </div>
 
@@ -843,41 +808,7 @@ export default function SuperAdminDashboard() {
             </Box>
           )}
 
-          {/* ════ ✅ NEW: MARKS REPORT ════ */}
-          {selectedItem === "MarksReport" && !deptMarksDetail && (
-            <Box>
-              <Typography variant="h4" sx={{ fontWeight: "bold", mb: 1 }}>Marks Report by Department</Typography>
-              <Typography sx={{ color: "#64748b", mb: 3, fontSize: "14px" }}>
-                Click any department to see all mark entries for that department.
-              </Typography>
-
-              <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", marginBottom: "32px" }}>
-                {marksByDept.length === 0 ? (
-                  <p style={{ color: "#94a3b8" }}>No marks data yet.</p>
-                ) : (
-                  marksByDept.map((d) => (
-                    <div
-                      key={d.department}
-                      onClick={() => fetchDeptMarksDetail(d.department)}
-                      style={{
-                        padding: "20px 32px", borderRadius: "12px",
-                        background: "#fff", border: `2px solid ${getDeptColor(d.department, departments)}`,
-                        textAlign: "center", cursor: "pointer", minWidth: "140px",
-                        boxShadow: "0 4px 14px rgba(0,0,0,0.07)",
-                        transition: "transform 0.15s",
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-3px)"}
-                      onMouseLeave={(e) => e.currentTarget.style.transform = "none"}
-                    >
-                      <p style={{ fontWeight: 700, color: getDeptColor(d.department, departments), fontSize: "30px" }}>{d.count}</p>
-                      <p style={{ color: "#475569", fontSize: "14px", marginTop: "4px" }}>{d.department}</p>
-                      <p style={{ color: "#94a3b8", fontSize: "11px" }}>mark entries</p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </Box>
-          )}
+          
 
           {/* ════ MARKS DETAIL (drill-down) ════ */}
           {selectedItem === "MarksDetail" && deptMarksDetail && (
