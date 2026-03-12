@@ -58,6 +58,13 @@ function verifySuperAdmin(req, res, next) {
   next();
 }
 
+/* ── verifyFaculty: allows admin, superadmin, AND faculty ── */
+function verifyFaculty(req, res, next) {
+  if (!req.user || !["admin","superadmin","faculty"].includes(req.user.role))
+    return res.status(403).json({ message: "Faculty/Admin access required" });
+  next();
+}
+
 function validate(fields) {
   return (req, res, next) => {
     const missing = [];
@@ -82,7 +89,9 @@ function errorHandler(err, req, res, _next) {
   res.status(500).json({ message: "Internal server error" });
 }
 
-/* ── LOGIN ── */
+/* ═══════════════════════════════════════════════
+   LOGIN
+═══════════════════════════════════════════════ */
 app.post("/login", validate({ email:"string", password:"string" }), async (req, res) => {
   const { email, password } = req.body;
   if (!isEmail(email)) return res.status(400).json({ message: "Invalid email format" });
@@ -92,17 +101,19 @@ app.post("/login", validate({ email:"string", password:"string" }), async (req, 
     const user = rows[0];
     if (password !== user.password) return res.status(400).json({ message: "Wrong password" });
     const token = jwt.sign(
-      { id: user.id, role: user.role, department: user.department },
+      { id: user.id, name: user.name, role: user.role, department: user.department },
       SECRET_KEY, { expiresIn: "8h" }
     );
-    res.json({ token, role: user.role, id: user.id, department: user.department });
+    res.json({ token, role: user.role, id: user.id, name: user.name, department: user.department });
   } catch (error) {
     console.error("Login Error:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-/* ── SUPERADMIN — DEPARTMENTS ── */
+/* ═══════════════════════════════════════════════
+   SUPERADMIN — DEPARTMENTS
+═══════════════════════════════════════════════ */
 app.get("/superadmin/departments", verifyToken, verifySuperAdmin, async (req, res) => {
   try { const [r] = await pool.query("SELECT * FROM departments ORDER BY name ASC"); res.json(r); }
   catch { res.status(500).json({ message: "Server error" }); }
@@ -125,7 +136,9 @@ app.delete("/superadmin/department/:name", verifyToken, verifySuperAdmin, async 
   } catch { res.status(500).json({ message: "Server error" }); }
 });
 
-/* ── SUPERADMIN — ADMINS ── */
+/* ═══════════════════════════════════════════════
+   SUPERADMIN — ADMINS
+═══════════════════════════════════════════════ */
 app.post("/superadmin/add-admin", verifyToken, verifySuperAdmin,
   validate({ name:"string", email:"string", password:"string", department:"string" }),
   async (req, res) => {
@@ -150,7 +163,9 @@ app.delete("/superadmin/admin/:id", verifyToken, verifySuperAdmin, async (req, r
   catch { res.status(500).json({ message: "Server error" }); }
 });
 
-/* ── SUPERADMIN — STATS ── */
+/* ═══════════════════════════════════════════════
+   SUPERADMIN — STATS
+═══════════════════════════════════════════════ */
 app.get("/superadmin/stats", verifyToken, verifySuperAdmin, async (req, res) => {
   try {
     const [[{ totalStudents }]] = await pool.query("SELECT COUNT(*) as totalStudents FROM users WHERE role='student'");
@@ -216,7 +231,9 @@ app.get("/superadmin/marks-entries-count", verifyToken, verifySuperAdmin, async 
   } catch { res.status(500).json({ message: "Server error" }); }
 });
 
-/* ── ANNOUNCEMENTS ── */
+/* ═══════════════════════════════════════════════
+   ANNOUNCEMENTS
+═══════════════════════════════════════════════ */
 app.get("/announcements", verifyToken, async (req, res) => {
   try {
     let rows;
@@ -261,7 +278,9 @@ app.get("/announcement/:id/replies", verifyToken, async (req, res) => {
   } catch { res.status(500).json({ message: "Server error" }); }
 });
 
-/* ── STUDENTS ── */
+/* ═══════════════════════════════════════════════
+   STUDENTS — admin + faculty can read
+═══════════════════════════════════════════════ */
 app.post("/add-student", verifyToken, verifyAdmin,
   validate({ name:"string", rollno:"string", email:"string", password:"string" }),
   async (req, res) => {
@@ -280,7 +299,6 @@ app.post("/add-student", verifyToken, verifyAdmin,
   } catch { res.status(500).json({ message: "Server error" }); }
 });
 
-/* ── BULK ADD STUDENTS ── */
 app.post("/admin/bulk-add-students", verifyToken, verifyAdmin, async (req, res) => {
   const { students } = req.body;
   if (!Array.isArray(students) || !students.length)
@@ -319,14 +337,21 @@ app.delete("/student/:id", verifyToken, verifyAdmin, async (req, res) => {
     res.json({ message: "Student and all related data deleted" });
   } catch (e) { console.error(e); res.status(500).json({ message: "Server error" }); }
 });
-app.get("/students", verifyToken, verifyAdmin, async (req, res) => {
+
+/* GET /students — admin sees own dept, faculty sees own dept, superadmin sees all */
+app.get("/students", verifyToken, verifyFaculty, async (req, res) => {
   try {
-    const [r] = req.user.role === "superadmin"
-      ? await pool.query("SELECT id,name,rollno,email,department FROM users WHERE role='student'")
-      : await pool.query("SELECT id,name,rollno,email,department FROM users WHERE role='student' AND department=?", [req.user.department]);
+    let r;
+    if (req.user.role === "superadmin") {
+      [r] = await pool.query("SELECT id,name,rollno,email,department FROM users WHERE role='student' ORDER BY name");
+    } else {
+      // admin AND faculty — both have department in JWT
+      [r] = await pool.query("SELECT id,name,rollno,email,department FROM users WHERE role='student' AND department=? ORDER BY name", [req.user.department]);
+    }
     res.json(r);
   } catch { res.status(500).json({ message: "Server error" }); }
 });
+
 app.get("/student/:id", verifyToken, async (req, res) => {
   try {
     const [r] = await pool.query("SELECT id,name,rollno,email,department FROM users WHERE id=? AND role='student'", [req.params.id]);
@@ -335,14 +360,9 @@ app.get("/student/:id", verifyToken, async (req, res) => {
   } catch { res.status(500).json({ message: "Server error" }); }
 });
 
-/* ════════════════════════════════════════════════════
-   ✅  FACULTY ROUTES  (completely new — were missing)
-════════════════════════════════════════════════════ */
-
-/**
- * GET /admin/faculty
- * Returns faculty list for admin's department
- */
+/* ═══════════════════════════════════════════════
+   FACULTY MANAGEMENT (admin only)
+═══════════════════════════════════════════════ */
 app.get("/admin/faculty", verifyToken, verifyAdmin, async (req, res) => {
   try {
     const [rows] = req.user.role === "superadmin"
@@ -355,38 +375,19 @@ app.get("/admin/faculty", verifyToken, verifyAdmin, async (req, res) => {
   }
 });
 
-/**
- * POST /admin/add-faculty
- * Body: { name, email, password }
- * Department is taken from the logged-in admin's JWT — not from body
- */
 app.post("/admin/add-faculty", verifyToken, verifyAdmin,
   validate({ name:"string", email:"string", password:"string" }),
   async (req, res) => {
   const { name, email, password } = req.body;
-  if (!isEmail(email))
-    return res.status(400).json({ message: "Invalid email format" });
-  if (password.length < 4)
-    return res.status(400).json({ message: "Password must be at least 4 characters" });
-
-  const department = req.user.department;   // always use admin's own dept
-  if (!department)
-    return res.status(403).json({ message: "Admin has no department assigned" });
-
+  if (!isEmail(email)) return res.status(400).json({ message: "Invalid email format" });
+  if (password.length < 4) return res.status(400).json({ message: "Password must be at least 4 characters" });
+  const department = req.user.department;
+  if (!department) return res.status(403).json({ message: "Admin has no department assigned" });
   try {
     const [existing] = await pool.query("SELECT id FROM users WHERE email=?", [email]);
-    if (existing.length > 0)
-      return res.status(400).json({ message: "Email already in use by another account" });
-
-    await pool.query(
-      "INSERT INTO users (name, email, password, role, department) VALUES (?, ?, ?, 'faculty', ?)",
-      [name, email, password, department]
-    );
-
-    // Return the new row so the frontend list updates instantly
-    const [newRow] = await pool.query(
-      "SELECT id,name,email,department FROM users WHERE email=? AND role='faculty'", [email]
-    );
+    if (existing.length > 0) return res.status(400).json({ message: "Email already in use by another account" });
+    await pool.query("INSERT INTO users (name,email,password,role,department) VALUES (?,?,?,'faculty',?)", [name,email,password,department]);
+    const [newRow] = await pool.query("SELECT id,name,email,department FROM users WHERE email=? AND role='faculty'", [email]);
     res.json({ message: `Faculty added to ${department}`, faculty: newRow[0] });
   } catch (e) {
     console.error("POST /admin/add-faculty:", e);
@@ -394,18 +395,13 @@ app.post("/admin/add-faculty", verifyToken, verifyAdmin,
   }
 });
 
-/**
- * DELETE /admin/faculty/:id
- * Removes a faculty member (dept-restricted for admin, unrestricted for superadmin)
- */
 app.delete("/admin/faculty/:id", verifyToken, verifyAdmin, async (req, res) => {
   const facultyId = req.params.id;
   try {
     if (req.user.role !== "superadmin") {
       const [rows] = await pool.query("SELECT department FROM users WHERE id=? AND role='faculty'", [facultyId]);
       if (!rows.length) return res.status(404).json({ message: "Faculty member not found" });
-      if (rows[0].department !== req.user.department)
-        return res.status(403).json({ message: "Cannot delete faculty from another department" });
+      if (rows[0].department !== req.user.department) return res.status(403).json({ message: "Cannot delete faculty from another department" });
     }
     await pool.query("DELETE FROM users WHERE id=? AND role='faculty'", [facultyId]);
     res.json({ message: "Faculty member removed" });
@@ -415,7 +411,45 @@ app.delete("/admin/faculty/:id", verifyToken, verifyAdmin, async (req, res) => {
   }
 });
 
-/* ── ADMIN RESET STUDENT PASSWORD ── */
+/* ═══════════════════════════════════════════════
+   FACULTY NOTES  (faculty-only routes)
+═══════════════════════════════════════════════ */
+app.post("/faculty/note", verifyToken, async (req, res) => {
+  if (req.user.role !== "faculty" && req.user.role !== "admin" && req.user.role !== "superadmin")
+    return res.status(403).json({ message: "Faculty access required" });
+  const { student_id, note } = req.body;
+  if (!student_id || !note?.trim())
+    return res.status(400).json({ message: "student_id and note are required" });
+  try {
+    await pool.query(
+      "INSERT INTO faculty_notes (faculty_id, student_id, note) VALUES (?, ?, ?)",
+      [req.user.id, student_id, note.trim()]
+    );
+    res.json({ message: "Note saved" });
+  } catch (e) {
+    console.error("POST /faculty/note:", e);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.get("/faculty/notes/:student_id", verifyToken, async (req, res) => {
+  if (req.user.role !== "faculty" && req.user.role !== "admin" && req.user.role !== "superadmin")
+    return res.status(403).json({ message: "Faculty access required" });
+  try {
+    const [rows] = await pool.query(
+      "SELECT n.id, n.note, n.created_at, u.name as faculty_name FROM faculty_notes n JOIN users u ON n.faculty_id=u.id WHERE n.student_id=? AND n.faculty_id=? ORDER BY n.created_at DESC",
+      [req.params.student_id, req.user.id]
+    );
+    res.json(rows);
+  } catch (e) {
+    console.error("GET /faculty/notes:", e);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ═══════════════════════════════════════════════
+   ADMIN RESET STUDENT PASSWORD
+═══════════════════════════════════════════════ */
 app.put("/admin/reset-student-password", verifyToken, verifyAdmin, async (req, res) => {
   const { student_id, new_password } = req.body;
   if (!student_id || !new_password) return res.status(400).json({ message: "student_id and new_password required" });
@@ -431,7 +465,9 @@ app.put("/admin/reset-student-password", verifyToken, verifyAdmin, async (req, r
   } catch { res.status(500).json({ message: "Server error" }); }
 });
 
-/* ── GRADE HELPER ── */
+/* ═══════════════════════════════════════════════
+   GRADE HELPER
+═══════════════════════════════════════════════ */
 function calculateGrade(marks) {
   if (marks >= 91) return { grade:"O",  gradePoints:10 };
   if (marks >= 81) return { grade:"A+", gradePoints:9  };
@@ -442,7 +478,9 @@ function calculateGrade(marks) {
   return               { grade:"F",  gradePoints:0  };
 }
 
-/* ── SUBJECTS ── */
+/* ═══════════════════════════════════════════════
+   SUBJECTS
+═══════════════════════════════════════════════ */
 app.get("/subjects", verifyToken, async (req, res) => {
   try {
     let r;
@@ -488,7 +526,9 @@ app.get("/subjects-by-sem", verifyToken, async (req, res) => {
   } catch { res.status(500).json({ message:"Server error" }); }
 });
 
-/* ── MARKS ── */
+/* ═══════════════════════════════════════════════
+   MARKS — faculty can read (verifyFaculty)
+═══════════════════════════════════════════════ */
 app.post("/add-marks", verifyToken, verifyAdmin,
   validate({student_id:"number",subject_id:"number",marks_scored:"number",semester:"string"}),
   async (req, res) => {
@@ -508,7 +548,6 @@ app.post("/add-marks", verifyToken, verifyAdmin,
   } catch { res.status(500).json({ message:"Server error" }); }
 });
 
-/* ── BULK ADD MARKS ── */
 app.post("/admin/bulk-add-marks", verifyToken, verifyAdmin, async (req, res) => {
   const { rows } = req.body;
   if (!Array.isArray(rows)||!rows.length) return res.status(400).json({ message:"No rows provided" });
@@ -560,13 +599,21 @@ app.delete("/mark/:id", verifyToken, verifyAdmin, async (req, res) => {
     res.json({ message:"Mark entry deleted" });
   } catch (e) { console.error(e); res.status(500).json({ message:"Server error" }); }
 });
-app.get("/all-marks", verifyToken, verifyAdmin, async (req, res) => {
+
+/* GET /all-marks — admin + faculty can read dept marks */
+app.get("/all-marks", verifyToken, verifyFaculty, async (req, res) => {
   try {
-    const base=`SELECT m.*,s.subject_name,s.credits,u.name as student_name FROM marks m JOIN subjects s ON m.subject_id=s.id JOIN users u ON m.student_id=u.id ORDER BY m.semester,u.name`;
-    const [r]=req.user.role==="superadmin"?await pool.query(base):await pool.query(base.replace("ORDER BY","WHERE m.department=? ORDER BY"),[req.user.department]);
+    const base = `SELECT m.*,s.subject_name,s.credits,u.name as student_name FROM marks m JOIN subjects s ON m.subject_id=s.id JOIN users u ON m.student_id=u.id ORDER BY m.semester,u.name`;
+    let r;
+    if (req.user.role === "superadmin") {
+      [r] = await pool.query(base);
+    } else {
+      [r] = await pool.query(base.replace("ORDER BY", "WHERE m.department=? ORDER BY"), [req.user.department]);
+    }
     res.json(r);
   } catch { res.status(500).json({ message:"Server error" }); }
 });
+
 app.get("/student-marks/:id", verifyToken, async (req, res) => {
   try {
     const [rows]=await pool.query("SELECT m.*,s.subject_name,s.credits FROM marks m JOIN subjects s ON m.subject_id=s.id WHERE m.student_id=? ORDER BY m.semester",[req.params.id]);
@@ -583,7 +630,9 @@ app.get("/student-marks/:id", verifyToken, async (req, res) => {
   } catch { res.status(500).json({ message:"Server error" }); }
 });
 
-/* ── ATTENDANCE ── */
+/* ═══════════════════════════════════════════════
+   ATTENDANCE — faculty can read
+═══════════════════════════════════════════════ */
 app.get("/student-attendance/:id", verifyToken, async (req, res) => {
   try { const [r]=await pool.query("SELECT a.id,a.student_id,a.semester,a.present_days,a.total_days,a.attendance_percentage FROM attendance a WHERE a.student_id=? ORDER BY a.semester",[req.params.id]); res.json(r); }
   catch (e) { console.error(e); res.status(500).json({ message:"Server error" }); }
@@ -601,15 +650,24 @@ app.post("/add-attendance", verifyToken, verifyAdmin,
     res.json({ message:"Attendance saved", attendance_percentage:pct });
   } catch (e) { console.error(e); res.status(500).json({ message:"Server error", detail:e.message }); }
 });
-app.get("/attendance-list", verifyToken, verifyAdmin, async (req, res) => {
+
+/* GET /attendance-list — admin + faculty can read */
+app.get("/attendance-list", verifyToken, verifyFaculty, async (req, res) => {
   try {
-    const base=`SELECT a.id,a.student_id,a.semester,a.present_days,a.total_days,a.attendance_percentage,u.name as student_name,u.rollno,u.department FROM attendance a JOIN users u ON a.student_id=u.id ORDER BY a.semester,u.name`;
-    const [r]=req.user.role==="superadmin"?await pool.query(base):await pool.query(base.replace("ORDER BY","WHERE u.department=? ORDER BY"),[req.user.department]);
+    const base = `SELECT a.id,a.student_id,a.semester,a.present_days,a.total_days,a.attendance_percentage,u.name as student_name,u.rollno,u.department FROM attendance a JOIN users u ON a.student_id=u.id ORDER BY a.semester,u.name`;
+    let r;
+    if (req.user.role === "superadmin") {
+      [r] = await pool.query(base);
+    } else {
+      [r] = await pool.query(base.replace("ORDER BY", "WHERE u.department=? ORDER BY"), [req.user.department]);
+    }
     res.json(r);
   } catch (e) { console.error(e); res.status(500).json({ message:"Server error" }); }
 });
 
-/* ── EFFICIENCY ── */
+/* ═══════════════════════════════════════════════
+   EFFICIENCY — faculty can read
+═══════════════════════════════════════════════ */
 const ACTIVITY_POINTS = { Club:10, Workshop:15, NSS:20, NCC:25, Sports:15, Leadership:20, Volunteering:15 };
 
 app.get("/efficiency/:studentId", verifyToken, async (req, res) => {
@@ -666,7 +724,8 @@ app.get("/efficiency/:studentId", verifyToken, async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message:"Server error" }); }
 });
 
-app.get("/admin/all-efficiency", verifyToken, verifyAdmin, async (req, res) => {
+/* GET /admin/all-efficiency — admin + faculty can read */
+app.get("/admin/all-efficiency", verifyToken, verifyFaculty, async (req, res) => {
   try {
     const [allStudents]=await pool.query("SELECT id,name,rollno,department FROM users WHERE role='student'");
     const disp=req.user.role==="superadmin"?allStudents:allStudents.filter(s=>s.department===req.user.department);
@@ -702,7 +761,9 @@ app.get("/admin/all-efficiency", verifyToken, verifyAdmin, async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message:"Server error" }); }
 });
 
-/* ── SKILLS / ACTIVITIES / ACHIEVEMENTS ── */
+/* ═══════════════════════════════════════════════
+   SKILLS / ACTIVITIES / ACHIEVEMENTS
+═══════════════════════════════════════════════ */
 app.post("/admin/student-skill", verifyToken, verifyAdmin, async (req, res) => {
   const { student_id, skill_level, skill_score } = req.body;
   if (!student_id||!skill_level||skill_score===undefined) return res.status(400).json({ message:"student_id, skill_level, skill_score required" });
@@ -753,17 +814,23 @@ app.get("/admin/student-efficiency-data/:studentId", verifyToken, verifyAdmin, a
   } catch { res.status(500).json({ message:"Server error" }); }
 });
 
-/* ── SEARCH / CHANGE PASSWORD ── */
-app.get("/students/search", verifyToken, verifyAdmin, async (req, res) => {
+/* ═══════════════════════════════════════════════
+   SEARCH / CHANGE PASSWORD
+═══════════════════════════════════════════════ */
+app.get("/students/search", verifyToken, verifyFaculty, async (req, res) => {
   const { q } = req.query;
   if (!q||q.trim().length<2) return res.json([]);
   try {
-    const [r]=req.user.role==="superadmin"
-      ?await pool.query("SELECT id,name,rollno FROM users WHERE role='student' AND rollno LIKE ? LIMIT 8",[`${q.trim()}%`])
-      :await pool.query("SELECT id,name,rollno FROM users WHERE role='student' AND department=? AND rollno LIKE ? LIMIT 8",[req.user.department,`${q.trim()}%`]);
+    let r;
+    if (req.user.role === "superadmin") {
+      [r] = await pool.query("SELECT id,name,rollno FROM users WHERE role='student' AND rollno LIKE ? LIMIT 8", [`${q.trim()}%`]);
+    } else {
+      [r] = await pool.query("SELECT id,name,rollno FROM users WHERE role='student' AND department=? AND rollno LIKE ? LIMIT 8", [req.user.department, `${q.trim()}%`]);
+    }
     res.json(r);
   } catch { res.status(500).json({ message:"Server error" }); }
 });
+
 app.put("/change-password", verifyToken, async (req, res) => {
   const { current_password, new_password } = req.body;
   if (!current_password||!new_password) return res.status(400).json({ message:"Both fields required" });
