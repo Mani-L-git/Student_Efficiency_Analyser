@@ -11,6 +11,9 @@ const pool = require("./src/config/config");
 
 const app = express();
 
+const PORT = process.env.PORT || 3000;
+
+
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 
 const logDir = path.join(__dirname, "logs");
@@ -1285,8 +1288,17 @@ app.get("/students/search", verifyToken, verifyFaculty, async (req, res) => {
 /* ── ERROR HANDLER (must be last) ── */
 app.use(errorHandler);
 
+app.get("/", (req, res) => {
+  res.json({
+    status: "success",
+    message: "Backend is running 🚀",
+    time: new Date().toISOString()
+  });
+});
+
 /* ── START ── */
-app.listen(5000, async () => {
+
+app.listen(PORT, async () => {
   await runMigrations();
-  console.log("Server running on http://localhost:5000");
+  console.log(`Server running on port ${PORT}`);
 });
