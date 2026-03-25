@@ -1320,9 +1320,7 @@ app.use(errorHandler);
 
 /* ── START ── */
 
-// To this:
-runMigrations().then(() => {
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
+app.listen(PORT, async () => {
+  await runMigrations();
+  console.log(`Server running on port ${PORT}`);
 });
