@@ -41,10 +41,7 @@ const corsOptions = {
   credentials: true
 };
 
-// ✅ Apply CORS
-app.use(cors(corsOptions));
 
-// ✅ Handle preflight correctly
 app.use(cors(corsOptions)); // enough
 
 app.use(express.json({ limit: "10kb" }));
@@ -1323,7 +1320,9 @@ app.use(errorHandler);
 
 /* ── START ── */
 
-app.listen(PORT, async () => {
-  await runMigrations();
-  console.log(`Server running on port ${PORT}`);
+// To this:
+runMigrations().then(() => {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 });
