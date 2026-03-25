@@ -156,6 +156,14 @@ function calculateGrade(marks) {
   return                  { grade: "F",  gradePoints: 0  };
 }
 
+
+app.get("/", (req, res) => {
+  res.status(200).json({
+    status: "success",
+    message: "Backend is running 🚀"
+  });
+});
+
 /* ═══════════════════════════════════════════════
    LOGIN
 ═══════════════════════════════════════════════ */
@@ -1312,13 +1320,6 @@ app.get("/students/search", verifyToken, verifyFaculty, async (req, res) => {
 /* ── ERROR HANDLER (must be last) ── */
 app.use(errorHandler);
 
-app.get("/", (req, res) => {
-  res.json({
-    status: "success",
-    message: "Backend is running 🚀",
-    time: new Date().toISOString()
-  });
-});
 
 /* ── START ── */
 
