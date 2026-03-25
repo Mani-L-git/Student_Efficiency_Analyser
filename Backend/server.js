@@ -14,6 +14,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 
+
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 
 const logDir = path.join(__dirname, "logs");
@@ -22,11 +23,29 @@ const accessLogStream = fs.createWriteStream(path.join(logDir, "access.log"), { 
 app.use(morgan("dev"));
 app.use(morgan("combined", { stream: accessLogStream }));
 
-app.use(cors({
-  origin: "*",
-  methods: ["GET", "POST", "PUT", "DELETE"],
+const allowedOrigins = [
+  "https://slea.onrender.com"
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true); // Postman / mobile
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true
-}));
+};
+
+// ✅ Apply CORS
+app.use(cors(corsOptions));
+
+// ✅ Handle preflight correctly
+app.options("*", cors(corsOptions));
 
 app.use(express.json({ limit: "10kb" }));
 
