@@ -44,7 +44,7 @@ const GRADE_OPTIONS = ["All","O","A+","A","B+","B","C","F"];
 const PAGE_SIZES = [5, 25, 100, 1000];
 
 const getAuth  = () => ({ Authorization: `Bearer ${localStorage.getItem("token")}` });
-const BASE_URL = "http://localhost:5000";
+const BASE_URL = "https://slea-backend.onrender.com";
 
 const openedMixin = (theme) => ({
   width: drawerWidth,
