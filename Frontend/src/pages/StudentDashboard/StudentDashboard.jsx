@@ -86,7 +86,7 @@ function StudentDashboard() {
 
   const fetchMarks = async () => {
     try {
-      const res  = await fetch(`http://localhost:5000/student-marks/${studentId}`, { headers: authHeader });
+      const res  = await fetch(`https://slea-backend.onrender.com/student-marks/${studentId}`, { headers: authHeader });
       const data = await res.json();
       setSemesters(data.semesters || []);
       setCgpa(data.cgpa || "0.00");
@@ -96,7 +96,7 @@ function StudentDashboard() {
 
   const fetchEfficiencyScore = async () => {
     try {
-      const res  = await fetch(`http://localhost:5000/efficiency/${studentId}`, { headers: authHeader });
+      const res  = await fetch(`https://slea-backend.onrender.com/efficiency/${studentId}`, { headers: authHeader });
       if (!res.ok) return;
       setEffScore(await res.json());
     } catch (err) { console.error("Efficiency error:", err); }
@@ -104,7 +104,7 @@ function StudentDashboard() {
 
   const fetchStudent = async () => {
     try {
-      const res  = await fetch(`http://localhost:5000/student/${studentId}`, { headers: authHeader });
+      const res  = await fetch(`https://slea-backend.onrender.com/student/${studentId}`, { headers: authHeader });
       const data = await res.json();
       setStudentName(data?.name || "Student");
     } catch (err) { console.error("Student error:", err); }
@@ -112,7 +112,7 @@ function StudentDashboard() {
 
   const fetchAttendance = async () => {
     try {
-      const res  = await fetch(`http://localhost:5000/student-attendance/${studentId}`, { headers: authHeader });
+      const res  = await fetch(`https://slea-backend.onrender.com/student-attendance/${studentId}`, { headers: authHeader });
       const data = await res.json();
       setAttendance(Array.isArray(data) ? data : []);
     } catch (err) { console.error("Attendance error:", err); }
@@ -120,7 +120,7 @@ function StudentDashboard() {
 
   const fetchAnnouncements = async () => {
     try {
-      const res  = await fetch("http://localhost:5000/announcements", { headers: authHeader });
+      const res  = await fetch("https://slea-backend.onrender.com/announcements", { headers: authHeader });
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
       setAnnouncements(list);
@@ -130,7 +130,7 @@ function StudentDashboard() {
 
   const fetchReplies = async (annId) => {
     try {
-      const res  = await fetch(`http://localhost:5000/announcement/${annId}/replies`, { headers: authHeader });
+      const res  = await fetch(`https://slea-backend.onrender.com/announcement/${annId}/replies`, { headers: authHeader });
       const data = await res.json();
       setReplies(prev => ({ ...prev, [annId]: Array.isArray(data) ? data : [] }));
     } catch (err) { console.error("Replies error:", err); }
@@ -153,7 +153,7 @@ function StudentDashboard() {
     const text = (replyText[annId] || "").trim();
     if (!text) return;
     try {
-      const res = await fetch(`http://localhost:5000/announcement/${annId}/reply`, {
+      const res = await fetch(`https://slea-backend.onrender.com/announcement/${annId}/reply`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeader },
         body: JSON.stringify({ reply_text: text, is_voice: isVoice }),
@@ -168,7 +168,7 @@ function StudentDashboard() {
   const handleChangePassword = async () => {
     if (!curPwd || !newPwd) { setPwdMsg("❌ Fill both fields"); return; }
     try {
-      const res  = await fetch("http://localhost:5000/change-password", {
+      const res  = await fetch("https://slea-backend.onrender.com/change-password", {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...authHeader },
         body: JSON.stringify({ current_password: curPwd, new_password: newPwd }),

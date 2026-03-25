@@ -317,28 +317,28 @@ export default function SuperAdminDashboard() {
   /* ── fetchers ── */
   const fetchStats = async () => {
     try {
-      const res = await fetch("http://localhost:5000/superadmin/stats", { headers: getAuthHeader() });
+      const res = await fetch("https://slea-backend.onrender.com/superadmin/stats", { headers: getAuthHeader() });
       if (res.status === 401) { localStorage.clear(); navigate("/"); return; }
       setStats(await res.json());
     } catch(e) { console.error(e); }
   };
   const fetchAdmins = async () => {
     try {
-      const res = await fetch("http://localhost:5000/superadmin/admins", { headers: getAuthHeader() });
+      const res = await fetch("https://slea-backend.onrender.com/superadmin/admins", { headers: getAuthHeader() });
       if (!res.ok) return;
       setAdmins(await res.json());
     } catch(e) { console.error(e); }
   };
   const fetchDepartments = async () => {
     try {
-      const res = await fetch("http://localhost:5000/superadmin/departments", { headers: getAuthHeader() });
+      const res = await fetch("https://slea-backend.onrender.com/superadmin/departments", { headers: getAuthHeader() });
       if (!res.ok) return;
       setDepartments(await res.json());
     } catch(e) { console.error(e); }
   };
   const fetchAnnouncements = async () => {
     try {
-      const res = await fetch("http://localhost:5000/announcements", { headers: getAuthHeader() });
+      const res = await fetch("https://slea-backend.onrender.com/announcements", { headers: getAuthHeader() });
       if (!res.ok) return;
       const list = await res.json();
       setAnnouncements(Array.isArray(list) ? list : []);
@@ -347,49 +347,49 @@ export default function SuperAdminDashboard() {
   };
   const fetchReplies = async (annId) => {
     try {
-      const res = await fetch(`http://localhost:5000/announcement/${annId}/replies`, { headers: getAuthHeader() });
+      const res = await fetch(`https://slea-backend.onrender.com/announcement/${annId}/replies`, { headers: getAuthHeader() });
       const data = await res.json();
       setReplies(prev => ({...prev, [annId]: Array.isArray(data) ? data : []}));
     } catch(e) { console.error(e); }
   };
   const fetchAdminByDept = async () => {
     try {
-      const res = await fetch("http://localhost:5000/superadmin/admin-by-dept", { headers: getAuthHeader() });
+      const res = await fetch("https://slea-backend.onrender.com/superadmin/admin-by-dept", { headers: getAuthHeader() });
       if (!res.ok) return;
       setAdminByDept(await res.json());
     } catch(e) { console.error(e); }
   };
   const fetchDeptEfficiency = async () => {
     try {
-      const res = await fetch("http://localhost:5000/superadmin/dept-efficiency", { headers: getAuthHeader() });
+      const res = await fetch("https://slea-backend.onrender.com/superadmin/dept-efficiency", { headers: getAuthHeader() });
       if (!res.ok) return;
       setDeptEfficiency(await res.json());
     } catch(e) { console.error(e); }
   };
   const fetchFaculty = async () => {
     try {
-      const res = await fetch("http://localhost:5000/admin/faculty", { headers: getAuthHeader() });
+      const res = await fetch("https://slea-backend.onrender.com/admin/faculty", { headers: getAuthHeader() });
       if (!res.ok) return;
       setAllFaculty(await res.json());
     } catch(e) { console.error(e); }
   };
   const fetchSubjects = async () => {
     try {
-      const res = await fetch("http://localhost:5000/subjects", { headers: getAuthHeader() });
+      const res = await fetch("https://slea-backend.onrender.com/subjects", { headers: getAuthHeader() });
       if (!res.ok) return;
       setAllSubjects(await res.json());
     } catch(e) { console.error(e); }
   };
   const fetchAllStudents = async () => {
     try {
-      const res = await fetch("http://localhost:5000/students", { headers: getAuthHeader() });
+      const res = await fetch("https://slea-backend.onrender.com/students", { headers: getAuthHeader() });
       if (!res.ok) return;
       setAllStudents(await res.json());
     } catch(e) { console.error(e); }
   };
   const fetchDeptPerfCounts = async () => {
     try {
-      const res = await fetch("http://localhost:5000/superadmin/dept-perf-counts", { headers: getAuthHeader() });
+      const res = await fetch("https://slea-backend.onrender.com/superadmin/dept-perf-counts", { headers: getAuthHeader() });
       if (!res.ok) return;
       setDeptPerfCounts(await res.json());
     } catch(e) { console.error(e); }
@@ -411,7 +411,7 @@ export default function SuperAdminDashboard() {
     if (!validateAdminForm()) return;
     const { name, email, password, department, phone } = adminForm;
     try {
-      const res = await fetch("http://localhost:5000/superadmin/add-admin", {
+      const res = await fetch("https://slea-backend.onrender.com/superadmin/add-admin", {
         method:"POST",
         headers:{"Content-Type":"application/json", ...getAuthHeader()},
         body: JSON.stringify({ name, email, password, department, phone }),
@@ -427,7 +427,7 @@ export default function SuperAdminDashboard() {
 
   const handleEditAdmin = async (updatedData) => {
     try {
-      const res = await fetch(`http://localhost:5000/superadmin/admin/${editingAdmin.id}`, {
+      const res = await fetch(`https://slea-backend.onrender.com/superadmin/admin/${editingAdmin.id}`, {
         method:"PUT",
         headers:{"Content-Type":"application/json", ...getAuthHeader()},
         body: JSON.stringify(updatedData),
@@ -443,7 +443,7 @@ export default function SuperAdminDashboard() {
   const handleToggleAdminStatus = async (admin) => {
     const newStatus = !admin.is_active;
     try {
-      const res = await fetch(`http://localhost:5000/superadmin/admin/${admin.id}`, {
+      const res = await fetch(`https://slea-backend.onrender.com/superadmin/admin/${admin.id}`, {
         method:"PUT",
         headers:{"Content-Type":"application/json", ...getAuthHeader()},
         body: JSON.stringify({
@@ -462,7 +462,7 @@ export default function SuperAdminDashboard() {
     const name = newDeptName.trim();
     if (!name) { setMsg("❌ Department name required"); return; }
     try {
-      const res = await fetch("http://localhost:5000/superadmin/department", {
+      const res = await fetch("https://slea-backend.onrender.com/superadmin/department", {
         method:"POST",
         headers:{"Content-Type":"application/json", ...getAuthHeader()},
         body: JSON.stringify({ name }),
@@ -478,7 +478,7 @@ export default function SuperAdminDashboard() {
   const handleDeleteDepartment = async (name) => {
     if (!window.confirm(`Remove department '${name}'?`)) return;
     try {
-      const res = await fetch(`http://localhost:5000/superadmin/department/${encodeURIComponent(name)}`, {
+      const res = await fetch(`https://slea-backend.onrender.com/superadmin/department/${encodeURIComponent(name)}`, {
         method:"DELETE", headers: getAuthHeader(),
       });
       if (!res.ok) { setMsg("❌ Failed to delete department"); return; }
@@ -491,7 +491,7 @@ export default function SuperAdminDashboard() {
     const { title, message, target } = annForm;
     if (!title || !message) { setMsg("❌ Title and message required"); return; }
     try {
-      const res = await fetch("http://localhost:5000/superadmin/announcement", {
+      const res = await fetch("https://slea-backend.onrender.com/superadmin/announcement", {
         method:"POST",
         headers:{"Content-Type":"application/json", ...getAuthHeader()},
         body: JSON.stringify({ title, message, target }),
@@ -506,7 +506,7 @@ export default function SuperAdminDashboard() {
 
   const handleDeleteAnn = async (id) => {
     try {
-      const res = await fetch(`http://localhost:5000/superadmin/announcement/${id}`, {
+      const res = await fetch(`https://slea-backend.onrender.com/superadmin/announcement/${id}`, {
         method:"DELETE", headers: getAuthHeader(),
       });
       if (!res.ok) return;
@@ -530,7 +530,7 @@ export default function SuperAdminDashboard() {
     const text = (replyText[annId] || "").trim();
     if (!text) return;
     try {
-      await fetch(`http://localhost:5000/announcement/${annId}/reply`, {
+      await fetch(`https://slea-backend.onrender.com/announcement/${annId}/reply`, {
         method:"POST",
         headers:{"Content-Type":"application/json", ...getAuthHeader()},
         body: JSON.stringify({ reply_text:text, is_voice:isVoice }),

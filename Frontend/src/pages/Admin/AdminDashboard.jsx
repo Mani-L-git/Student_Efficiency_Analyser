@@ -500,7 +500,7 @@ export default function AdminDashboard() {
 
   const doFetch = useCallback(async(path,setter)=>{
     try{
-      const r=await fetch(`http://localhost:5000/${path}`,{headers:getAuth()});
+      const r=await fetch(`https://slea-backend.onrender.com/${path}`,{headers:getAuth()});
       if (!r.ok) return;
       const d=await r.json();
       setter(Array.isArray(d)?d:[]);
@@ -518,7 +518,7 @@ export default function AdminDashboard() {
   };
   const loadAnn = async()=>{
     try{
-      const r=await fetch("http://localhost:5000/announcements",{headers:getAuth()});
+      const r=await fetch("https://slea-backend.onrender.com/announcements",{headers:getAuth()});
       if (!r.ok) return;
       const list=await r.json();
       setAnnouncements(Array.isArray(list)?list:[]);
@@ -527,19 +527,19 @@ export default function AdminDashboard() {
   };
   const loadReplies = async id=>{
     try{
-      const r=await fetch(`http://localhost:5000/announcement/${id}/replies`,{headers:getAuth()});
+      const r=await fetch(`https://slea-backend.onrender.com/announcement/${id}/replies`,{headers:getAuth()});
       const d=await r.json();
       setReplies(p=>({...p,[id]:Array.isArray(d)?d:[]}));
     }catch{}
   };
   const loadAllEff = async()=>{
-    try{ const r=await fetch("http://localhost:5000/admin/all-efficiency",{headers:getAuth()}); if(!r.ok)return; setAllEff(await r.json()); }catch{}
+    try{ const r=await fetch("https://slea-backend.onrender.com/admin/all-efficiency",{headers:getAuth()}); if(!r.ok)return; setAllEff(await r.json()); }catch{}
   };
   const loadEData = async sid=>{
-    try{ const r=await fetch(`http://localhost:5000/admin/student-efficiency-data/${sid}`,{headers:getAuth()}); if(!r.ok)return; setEData(await r.json()); }catch{}
+    try{ const r=await fetch(`https://slea-backend.onrender.com/admin/student-efficiency-data/${sid}`,{headers:getAuth()}); if(!r.ok)return; setEData(await r.json()); }catch{}
   };
   const loadEScore = async sid=>{
-    try{ const r=await fetch(`http://localhost:5000/efficiency/${sid}`,{headers:getAuth()}); if(!r.ok)return; setEScore(await r.json()); }catch{}
+    try{ const r=await fetch(`https://slea-backend.onrender.com/efficiency/${sid}`,{headers:getAuth()}); if(!r.ok)return; setEScore(await r.json()); }catch{}
   };
 
   /* ── Helpers ── */
@@ -555,7 +555,7 @@ export default function AdminDashboard() {
   const addStudent = async()=>{
     if (!sName||!sRoll||!sEmail||!sPwd){setSMsg("❌ Fill all required fields");return;}
     if (sPhone&&!/^[6-9]\d{9}$/.test(sPhone)){setSMsg("❌ Invalid phone number");return;}
-    const r=await fetch("http://localhost:5000/add-student",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},
+    const r=await fetch("https://slea-backend.onrender.com/add-student",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},
       body:JSON.stringify({name:sName,rollno:sRoll,email:sEmail,password:sPwd,phone:sPhone||undefined})});
     const d=await r.json();
     if (!r.ok){setSMsg(`❌ ${d.message}`);return;}
@@ -563,28 +563,28 @@ export default function AdminDashboard() {
     doFetch("students",setStudents);
   };
   const updateStudent = async(id,updates)=>{
-    const r=await fetch(`http://localhost:5000/admin/student/${id}`,{method:"PUT",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify(updates)});
+    const r=await fetch(`https://slea-backend.onrender.com/admin/student/${id}`,{method:"PUT",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify(updates)});
     const d=await r.json();
     if (!r.ok){setSMsg(`❌ ${d.message}`);return;}
     setSMsg("✅ Student updated");setEditStudent(null);doFetch("students",setStudents);
   };
   const delStudent = async id=>{
     if (!window.confirm("Delete this student and all their data?"))return;
-    await fetch(`http://localhost:5000/student/${id}`,{method:"DELETE",headers:getAuth()});
+    await fetch(`https://slea-backend.onrender.com/student/${id}`,{method:"DELETE",headers:getAuth()});
     doFetch("students",setStudents);doFetch("all-marks",setMarks);loadAllEff();
   };
 
   /* ── Subjects ── */
   const addSubject = async()=>{
     if (!subName||!subCred){alert("Fill subject name and credits");return;}
-    const r=await fetch("http://localhost:5000/add-subject",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},
+    const r=await fetch("https://slea-backend.onrender.com/add-subject",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},
       body:JSON.stringify({subject_name:subName,credits:Number(subCred),semester:subSem})});
     const d=await r.json();if(!r.ok){alert(d.message);return;}
     setSubName("");setSubCred("");doFetch("subjects",setSubjects);
   };
   const delSubject = async id=>{
     if (!window.confirm("Delete subject and linked marks?"))return;
-    await fetch(`http://localhost:5000/subject/${id}`,{method:"DELETE",headers:getAuth()});
+    await fetch(`https://slea-backend.onrender.com/subject/${id}`,{method:"DELETE",headers:getAuth()});
     doFetch("subjects",setSubjects);doFetch("all-marks",setMarks);
   };
 
@@ -605,7 +605,7 @@ export default function AdminDashboard() {
     const m = Number(val);
     if (!val||isNaN(m)||m<0||m>100){setMarksMsg("❌ Enter valid marks 0–100");return;}
     setInlineSaving(p=>({...p,[studentId]:true}));
-    const r=await fetch("http://localhost:5000/add-marks",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},
+    const r=await fetch("https://slea-backend.onrender.com/add-marks",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},
       body:JSON.stringify({student_id:studentId,subject_id:Number(selectedSubjectId),marks_scored:m,semester:selectedSemForMarks})});
     const d=await r.json();
     setInlineSaving(p=>({...p,[studentId]:false}));
@@ -616,7 +616,7 @@ export default function AdminDashboard() {
   };
 
   const saveEditMark = async(markId, newMarks)=>{
-    const r=await fetch(`http://localhost:5000/mark/${markId}`,{method:"PUT",headers:{"Content-Type":"application/json",...getAuth()},
+    const r=await fetch(`https://slea-backend.onrender.com/mark/${markId}`,{method:"PUT",headers:{"Content-Type":"application/json",...getAuth()},
       body:JSON.stringify({marks_scored:newMarks})});
     const d=await r.json();
     if (!r.ok){setMarksMsg(`❌ ${d.message}`);return;}
@@ -662,7 +662,7 @@ export default function AdminDashboard() {
       if (!subj) subj=subjects.find(s=>cn(s.subject_name).includes(cn(row.subject))||cn(row.subject).includes(cn(s.subject_name)));
       if (!subj){updated[i]={...row,status:"error",message:`Subject "${row.subject}" not found`};continue;}
       try{
-        const res=await fetch("http://localhost:5000/add-marks",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},
+        const res=await fetch("https://slea-backend.onrender.com/add-marks",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},
           body:JSON.stringify({student_id:stud.id,subject_id:subj.id,marks_scored:m,semester:row.semester})});
         const dd=await res.json();
         updated[i]=res.ok?{...row,status:"ok",message:`${dd.grade} · ${dd.gradePoints}pts`}:{...row,status:"error",message:dd.message};
@@ -677,21 +677,21 @@ export default function AdminDashboard() {
   /* ── Faculty ── */
   const addFaculty = async()=>{
     if (!fName||!fEmail||!fPwd){setFMsg("❌ Fill all required fields");return;}
-    const r=await fetch("http://localhost:5000/admin/add-faculty",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},
+    const r=await fetch("https://slea-backend.onrender.com/admin/add-faculty",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},
       body:JSON.stringify({name:fName,email:fEmail,password:fPwd,phone:fPhone||undefined})});
     const d=await r.json();if(!r.ok){setFMsg(`❌ ${d.message}`);return;}
     setFMsg("✅ Faculty added");setFName("");setFEmail("");setFPwd("");setFPhone("");
     doFetch("admin/faculty",setFaculty);
   };
   const updateFaculty = async(id,updates)=>{
-    const r=await fetch(`http://localhost:5000/admin/faculty/${id}`,{method:"PUT",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify(updates)});
+    const r=await fetch(`https://slea-backend.onrender.com/admin/faculty/${id}`,{method:"PUT",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify(updates)});
     const d=await r.json();
     if (!r.ok){setFMsg(`❌ ${d.message}`);return;}
     setFMsg("✅ Faculty updated");setEditingFaculty(null);doFetch("admin/faculty",setFaculty);
   };
   const toggleFacultyStatus = async(f)=>{
     const newActive = f.is_active===0 ? 1 : 0;
-    const r=await fetch(`http://localhost:5000/admin/faculty/${f.id}`,{method:"PUT",headers:{"Content-Type":"application/json",...getAuth()},
+    const r=await fetch(`https://slea-backend.onrender.com/admin/faculty/${f.id}`,{method:"PUT",headers:{"Content-Type":"application/json",...getAuth()},
       body:JSON.stringify({name:f.name,email:f.email,phone:f.phone||"",is_active:newActive})});
     if (!r.ok) return;
     setFMsg(`✅ Faculty marked ${newActive===1?"Active":"Inactive"}`);
@@ -700,7 +700,7 @@ export default function AdminDashboard() {
   const resetFacultyPassword = async()=>{
     if (!facResetId||!facResetPwd){setFacResetMsg("❌ Select faculty and enter password");return;}
     if (facResetPwd.length<4){setFacResetMsg("❌ Min 4 chars");return;}
-    const r=await fetch("http://localhost:5000/admin/reset-faculty-password",{method:"PUT",headers:{"Content-Type":"application/json",...getAuth()},
+    const r=await fetch("https://slea-backend.onrender.com/admin/reset-faculty-password",{method:"PUT",headers:{"Content-Type":"application/json",...getAuth()},
       body:JSON.stringify({faculty_id:facResetId,new_password:facResetPwd})});
     const d=await r.json();
     if (!r.ok){setFacResetMsg(`❌ ${d.message}`);return;}
@@ -729,7 +729,7 @@ export default function AdminDashboard() {
     setBulkLoading(true);setBulkMsg("");
     const payload=bulkRows.filter(r=>r.status!=="ok").map(r=>({name:r.name,rollno:r.rollno,email:r.email,password:r.password}));
     try{
-      const r=await fetch("http://localhost:5000/admin/bulk-add-students",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({students:payload})});
+      const r=await fetch("https://slea-backend.onrender.com/admin/bulk-add-students",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({students:payload})});
       const d=await r.json();
       const updated=[...bulkRows];
       (d.results||[]).forEach((res,i)=>{updated[i]={...updated[i],status:res.status,message:res.message};});
@@ -746,7 +746,7 @@ export default function AdminDashboard() {
     if (!aStud||!aSem||!aPres||!aTotal){setAMsg("❌ Fill all fields");return;}
     const p=Number(aPres),t=Number(aTotal);
     if (p>t){setAMsg("❌ Present > Total");return;}
-    const r=await fetch("http://localhost:5000/add-attendance",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},
+    const r=await fetch("https://slea-backend.onrender.com/add-attendance",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},
       body:JSON.stringify({student_id:aStud.id,semester:aSem,present_days:p,total_days:t})});
     const d=await r.json();if(!r.ok){setAMsg(`❌ ${d.message}`);return;}
     setAMsg(`✅ Saved — ${((p/t)*100).toFixed(1)}%`);
@@ -758,39 +758,39 @@ export default function AdminDashboard() {
   const resetEForm=()=>{setEType("");setESkill("");setESkillPts("");setEActType("");setEActDesc("");setEActPts("");setEAchName("");setEAchPts("");setEEditId(null);};
   const setSkill=async()=>{
     if (!eStud||!eSkill||!eSkillPts){setEMsg("❌ Enter skill and points");return;}
-    const r=await fetch("http://localhost:5000/admin/student-skill",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({student_id:eStud.id,skill_level:eSkill,skill_score:Number(eSkillPts)})});
+    const r=await fetch("https://slea-backend.onrender.com/admin/student-skill",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({student_id:eStud.id,skill_level:eSkill,skill_score:Number(eSkillPts)})});
     const d=await r.json();if(!r.ok){setEMsg(`❌ ${d.message}`);return;}
     setEMsg("✅ Skill saved");resetEForm();loadEData(eStud.id);loadEScore(eStud.id);loadAllEff();
   };
   const addAct=async()=>{
     if (!eStud||!eActType){setEMsg("❌ Select activity type");return;}
     const pts=Number(eActPts)||ACT_PTS[eActType]||10;
-    const url=eEditId?`http://localhost:5000/admin/student-activity/${eEditId}`:"http://localhost:5000/admin/student-activity";
+    const url=eEditId?`https://slea-backend.onrender.com/admin/student-activity/${eEditId}`:"https://slea-backend.onrender.com/admin/student-activity";
     const r=await fetch(url,{method:eEditId?"PUT":"POST",headers:{"Content-Type":"application/json",...getAuth()},
       body:JSON.stringify(eEditId?{activity_type:eActType,description:eActDesc,points:pts}:{student_id:eStud.id,activity_type:eActType,description:eActDesc,points:pts})});
     const d=await r.json();if(!r.ok){setEMsg(`❌ ${d.message}`);return;}
     setEMsg(eEditId?"✅ Activity updated":"✅ Activity added");resetEForm();loadEData(eStud.id);loadEScore(eStud.id);loadAllEff();
   };
-  const delAct=async id=>{await fetch(`http://localhost:5000/admin/student-activity/${id}`,{method:"DELETE",headers:getAuth()});loadEData(eStud.id);loadEScore(eStud.id);loadAllEff();};
+  const delAct=async id=>{await fetch(`https://slea-backend.onrender.com/admin/student-activity/${id}`,{method:"DELETE",headers:getAuth()});loadEData(eStud.id);loadEScore(eStud.id);loadAllEff();};
   const addAch=async()=>{
     if (!eStud||!eAchName||!eAchPts){setEMsg("❌ Fill name and points");return;}
-    const url=eEditId?`http://localhost:5000/admin/student-achievement/${eEditId}`:"http://localhost:5000/admin/student-achievement";
+    const url=eEditId?`https://slea-backend.onrender.com/admin/student-achievement/${eEditId}`:"https://slea-backend.onrender.com/admin/student-achievement";
     const r=await fetch(url,{method:eEditId?"PUT":"POST",headers:{"Content-Type":"application/json",...getAuth()},
       body:JSON.stringify(eEditId?{achievement_name:eAchName,points:Number(eAchPts)}:{student_id:eStud.id,achievement_name:eAchName,points:Number(eAchPts)})});
     const d=await r.json();if(!r.ok){setEMsg(`❌ ${d.message}`);return;}
     setEMsg(eEditId?"✅ Achievement updated":"✅ Achievement added");resetEForm();loadEData(eStud.id);loadEScore(eStud.id);loadAllEff();
   };
-  const delAch=async id=>{await fetch(`http://localhost:5000/admin/student-achievement/${id}`,{method:"DELETE",headers:getAuth()});loadEData(eStud.id);loadEScore(eStud.id);loadAllEff();};
+  const delAch=async id=>{await fetch(`https://slea-backend.onrender.com/admin/student-achievement/${id}`,{method:"DELETE",headers:getAuth()});loadEData(eStud.id);loadEScore(eStud.id);loadAllEff();};
 
   /* ── Announcements ── */
   const postAnn=async()=>{
     if (!annTitle||!annMsg){alert("Title and message required");return;}
-    await fetch("http://localhost:5000/admin/announcement",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({title:annTitle,message:annMsg})});
+    await fetch("https://slea-backend.onrender.com/admin/announcement",{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({title:annTitle,message:annMsg})});
     setAnnTitle("");setAnnMsg("");loadAnn();
   };
   const delAnn=async id=>{
     if (!window.confirm("Delete?"))return;
-    await fetch(`http://localhost:5000/superadmin/announcement/${id}`,{method:"DELETE",headers:getAuth()});loadAnn();
+    await fetch(`https://slea-backend.onrender.com/superadmin/announcement/${id}`,{method:"DELETE",headers:getAuth()});loadAnn();
   };
   const startVoice=annId=>{
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -801,21 +801,21 @@ export default function AdminDashboard() {
   };
   const sendReply=async(annId,isVoice=false)=>{
     const t=(repTxt[annId]||"").trim();if(!t)return;
-    await fetch(`http://localhost:5000/announcement/${annId}/reply`,{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({reply_text:t,is_voice:isVoice})});
+    await fetch(`https://slea-backend.onrender.com/announcement/${annId}/reply`,{method:"POST",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({reply_text:t,is_voice:isVoice})});
     setRepTxt(p=>({...p,[annId]:""}));loadReplies(annId);
   };
 
   /* ── Password ── */
   const changePassword=async()=>{
     if (!curPwd||!newPwd){setPwdMsg("❌ Fill both fields");return;}
-    const r=await fetch("http://localhost:5000/change-password",{method:"PUT",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({current_password:curPwd,new_password:newPwd})});
+    const r=await fetch("https://slea-backend.onrender.com/change-password",{method:"PUT",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({current_password:curPwd,new_password:newPwd})});
     const d=await r.json();if(!r.ok){setPwdMsg(`❌ ${d.message}`);return;}
     setPwdMsg("✅ Password changed!");setCurPwd("");setNewPwd("");
   };
   const resetStudentPassword=async()=>{
     if (!resetStud||!resetPwd){setResetMsg("❌ Select student and enter password");return;}
     if (resetPwd.length<4){setResetMsg("❌ Min 4 chars");return;}
-    const r=await fetch("http://localhost:5000/admin/reset-student-password",{method:"PUT",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({student_id:resetStud.id,new_password:resetPwd})});
+    const r=await fetch("https://slea-backend.onrender.com/admin/reset-student-password",{method:"PUT",headers:{"Content-Type":"application/json",...getAuth()},body:JSON.stringify({student_id:resetStud.id,new_password:resetPwd})});
     const d=await r.json();if(!r.ok){setResetMsg(`❌ ${d.message}`);return;}
     setResetMsg("✅ Password reset");setResetRoll("");setResetStud(null);setResetPwd("");
   };

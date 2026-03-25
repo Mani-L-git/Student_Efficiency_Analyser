@@ -22,7 +22,7 @@ function Login() {
 
     try {
       setLoading(true);
-      const res = await axios.post("http://localhost:5000/login", { email, password });
+      const res = await axios.post("https://slea-backend.onrender.com/login", { email, password });
       const { token, role, id } = res.data;
 
       if (!token) { setError("Login failed!"); return; }
